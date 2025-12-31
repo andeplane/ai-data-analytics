@@ -1,7 +1,10 @@
 /**
  * System prompt builder for the LLM chat.
  * Generates dynamic prompts that include available dataframe information.
+ * Uses the Hermes-compatible XML format for function calling.
  */
+
+import { tools } from './tools'
 
 export interface DataFrameInfo {
   name: string
@@ -11,70 +14,86 @@ export interface DataFrameInfo {
 }
 
 /**
+ * Build the tools XML section for the system prompt.
+ */
+function buildToolsXml(): string {
+  const toolsJson = tools.map(tool => JSON.stringify(tool)).join(' ')
+  return `<tools> ${toolsJson} </tools>`
+}
+
+/**
  * Build the system prompt with available dataframe information.
+ * Combines Hermes-2 function calling format with rich context about capabilities.
  */
 export function buildSystemPrompt(dataframes: DataFrameInfo[]): string {
-  const basePrompt = `You are a helpful data analysis assistant with access to tools.
+  const toolsXml = buildToolsXml()
+  
+  // Build dataframes context if available
+  let dataframesContext = ''
+  if (dataframes.length > 0) {
+    const dataframesList = dataframes
+      .map((df) => {
+        const header = `### ${df.name}\n- **Rows:** ${df.rows.toLocaleString()}\n- **Columns:** ${df.columns.join(', ')}`
+        
+        // Format head as a simple table
+        if (df.head && df.head.length > 0) {
+          const cols = df.columns.slice(0, 6) // Limit columns to keep prompt size reasonable
+          const headerRow = `| ${cols.join(' | ')} |`
+          const separator = `| ${cols.map(() => '---').join(' | ')} |`
+          const dataRows = df.head.slice(0, 3).map(row => 
+            `| ${cols.map(col => String(row[col] ?? '').substring(0, 20)).join(' | ')} |`
+          ).join('\n')
+          
+          return `${header}\n- **Sample data:**\n${headerRow}\n${separator}\n${dataRows}`
+        }
+        
+        return header
+      })
+      .join('\n\n')
+    dataframesContext = `
 
-## CRITICAL: How to Use Tools
-When you need to use a tool, you MUST output it in this EXACT format:
-<tool_call>
-{"name": "tool_name", "arguments": {"param1": value1, "param2": value2}}
-</tool_call>
+## Available DataFrames
+${dataframesList}
 
-## Available Tools
-1. add_numbers - Adds two numbers. Arguments: a (number), b (number)
-2. analyze_data - Analyzes dataframes. Arguments: dataframe_names (array of strings), question (string)
-
-## Examples
-
-User: "add 5 and 3"
-<tool_call>
-{"name": "add_numbers", "arguments": {"a": 5, "b": 3}}
-</tool_call>
-
-User: "show me the top 10 countries"
-<tool_call>
-{"name": "analyze_data", "arguments": {"dataframe_names": ["customers"], "question": "show top 10 countries"}}
-</tool_call>
-
-## Rules
-- When user asks to add/sum numbers → use add_numbers tool
-- When user asks about loaded data → use analyze_data tool
-- For greetings or unrelated questions → respond normally without tools`
-
-  if (dataframes.length === 0) {
-    return `${basePrompt}
+When the user asks about this data, use the analyze_data tool with the appropriate dataframe names.`
+  } else {
+    dataframesContext = `
 
 ## Available DataFrames
 No dataframes are currently loaded. Ask the user to upload a CSV or JSON file to get started with data analysis.`
   }
 
-  const dataframesList = dataframes
-    .map((df) => {
-      const header = `### ${df.name}\n- **Rows:** ${df.rows.toLocaleString()}\n- **Columns:** ${df.columns.join(', ')}`
-      
-      // Format head as a simple table
-      if (df.head && df.head.length > 0) {
-        const cols = df.columns.slice(0, 6) // Limit columns to keep prompt size reasonable
-        const headerRow = `| ${cols.join(' | ')} |`
-        const separator = `| ${cols.map(() => '---').join(' | ')} |`
-        const dataRows = df.head.slice(0, 3).map(row => 
-          `| ${cols.map(col => String(row[col] ?? '').substring(0, 20)).join(' | ')} |`
-        ).join('\n')
-        
-        return `${header}\n- **Sample data:**\n${headerRow}\n${separator}\n${dataRows}`
-      }
-      
-      return header
-    })
-    .join('\n\n')
+  // Combine Hermes function calling format with helpful assistant context
+  return `You are a helpful data analysis assistant. You can have normal conversations AND analyze data when asked.
 
-  return `${basePrompt}
+## Your Capabilities
+- Answer general questions and have friendly conversations
+- Analyze data using the analyze_data tool when users ask about their data
+- Create visualizations (charts, histograms, plots)
+- Perform aggregations, filtering, and calculations on data
+- Join and compare multiple datasets together
+- Add numbers using the add_numbers tool
 
-## Available DataFrames
-${dataframesList}
+## When to Use Tools
+Use the analyze_data tool when the user:
+- Asks questions about data (e.g., "what's the average...", "show me...", "how many...")
+- Requests visualizations (e.g., "create a chart", "plot a histogram")
+- Wants to filter, aggregate, or transform data
+- Asks to compare or join multiple datasets
 
-When the user asks about this data, call the analyze_data tool immediately with the appropriate dataframe names. Do not explain what you will do - just do it.`
+Use the add_numbers tool when the user asks to add or sum two numbers.
+
+Do NOT use tools for:
+- General greetings or casual conversation
+- Questions unrelated to the loaded data or math
+- Clarifying questions about what the user wants
+
+## Function Calling Format
+You are provided with function signatures within <tools></tools> XML tags. Here are the available tools: ${toolsXml}
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:
+<tool_call>
+{"arguments": <args-dict>, "name": <function-name>}
+</tool_call>${dataframesContext}`
 }
 

@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo } from 'react'
 import type { PyodideInterface } from 'pyodide'
 import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
-import { tools } from '../lib/tools'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
 
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
@@ -19,24 +18,9 @@ export interface Message {
   parts: MessagePart[]
 }
 
-interface ToolCall {
-  id: string
-  type: 'function'
-  function: {
-    name: string
-    arguments: string
-  }
-}
-
-interface LLMResponse {
-  choices: Array<{
-    message: {
-      role: string
-      content: string | null
-      toolCalls?: ToolCall[]
-    }
-    finishReason: string
-  }>
+interface ParsedToolCall {
+  name: string
+  arguments: Record<string, unknown>
 }
 
 interface UseLLMChatOptions {
@@ -50,34 +34,57 @@ function generateId(): string {
 }
 
 /**
- * Extract the output message from a ToolCallOutputParseError.
- * web-llm throws this when it tries to parse a normal response as a tool call.
- * The error message contains the actual output which we can extract.
+ * Parse <tool_call> XML tags from the model's response content.
+ * Hermes models output tool calls in this format:
+ * <tool_call>
+ * {"arguments": {...}, "name": "function_name"}
+ * </tool_call>
  */
-function extractMessageFromToolCallError(error: Error): string | null {
-  const errorMsg = error.message
-  // Error format: "...Got outputMessage: <actual message>\nGot error:..."
-  const match = errorMsg.match(/Got outputMessage:\s*([\s\S]*?)(?:\nGot error:|$)/)
-  if (match && match[1]) {
-    return match[1].trim()
+function parseToolCalls(content: string): ParsedToolCall[] {
+  const toolCalls: ParsedToolCall[] = []
+  
+  // Match <tool_call>...</tool_call> blocks
+  const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
+  let match
+  
+  while ((match = regex.exec(content)) !== null) {
+    try {
+      const jsonStr = match[1].trim()
+      const parsed = JSON.parse(jsonStr)
+      
+      // Handle both formats: {"arguments": {...}, "name": "..."} and {"name": "...", "arguments": {...}}
+      if (parsed.name && parsed.arguments) {
+        toolCalls.push({
+          name: parsed.name,
+          arguments: parsed.arguments,
+        })
+      }
+    } catch (e) {
+      console.warn('Failed to parse tool call JSON:', match[1], e)
+    }
   }
-  return null
+  
+  return toolCalls
 }
 
 /**
- * Check if an error is a ToolCallOutputParseError from web-llm
+ * Check if content contains tool calls
  */
-function isToolCallParseError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return error.message.includes('error encountered when parsing outputMessage for function calling')
-  }
-  return false
+function hasToolCalls(content: string): boolean {
+  return content.includes('<tool_call>') && content.includes('</tool_call>')
+}
+
+/**
+ * Remove tool call XML tags from content for display
+ */
+function removeToolCallsFromContent(content: string): string {
+  return content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim()
 }
 
 /**
  * Main LLM chat orchestration hook.
  * Handles conversation, tool calling, and response rendering.
- * Uses web-llm for local in-browser inference.
+ * Uses web-llm for local in-browser inference with manual function calling.
  */
 export function useLLMChat({
   pyodide,
@@ -91,10 +98,11 @@ export function useLLMChat({
   const { executeTool } = useToolExecutor({ pyodide })
 
   /**
-   * Call the local web-llm engine with messages and tools.
+   * Call the local web-llm engine with messages.
+   * Does NOT pass tools parameter - Hermes uses system prompt for tools.
    */
   const callLLM = useCallback(
-    async (conversationMessages: ChatCompletionMessageParam[]): Promise<LLMResponse> => {
+    async (conversationMessages: ChatCompletionMessageParam[]): Promise<string> => {
       if (!engine) {
         throw new Error('web-llm engine not ready')
       }
@@ -109,79 +117,31 @@ export function useLLMChat({
 
       console.log('Sending to web-llm:', JSON.stringify(fullMessages, null, 2))
 
-      try {
-        const response = await engine.chat.completions.create({
-          messages: fullMessages,
-          tools: dataframes.length > 0 ? tools : undefined,
-          tool_choice: dataframes.length > 0 ? 'auto' : undefined,
-          temperature: 0.7,
-          max_tokens: 2000,
-        })
+      // No tools parameter - Hermes uses manual function calling via system prompt
+      const response = await engine.chat.completions.create({
+        messages: fullMessages,
+        temperature: 0.7,
+        max_tokens: 2000,
+      })
 
-        console.log('web-llm response:', JSON.stringify(response, null, 2))
+      console.log('web-llm response:', JSON.stringify(response, null, 2))
 
-        // Convert web-llm response format to our internal format
-        const choice = response.choices[0]
-        return {
-          choices: [{
-            message: {
-              role: choice.message.role,
-              content: choice.message.content,
-              toolCalls: choice.message.tool_calls?.map(tc => ({
-                id: tc.id,
-                type: tc.type as 'function',
-                function: {
-                  name: tc.function.name,
-                  arguments: tc.function.arguments,
-                },
-              })),
-            },
-            finishReason: choice.finish_reason,
-          }],
-        }
-      } catch (err) {
-        // web-llm throws ToolCallOutputParseError when the model responds with
-        // plain text instead of a tool call (which is valid behavior).
-        // We extract the actual message from the error and return it.
-        if (isToolCallParseError(err)) {
-          console.log('Model responded with text instead of tool call, extracting message...')
-          const extractedMessage = extractMessageFromToolCallError(err as Error)
-          if (extractedMessage) {
-            return {
-              choices: [{
-                message: {
-                  role: 'assistant',
-                  content: extractedMessage,
-                  toolCalls: undefined,
-                },
-                finishReason: 'stop',
-              }],
-            }
-          }
-        }
-        // Re-throw other errors
-        throw err
-      }
+      return response.choices[0]?.message?.content || ''
     },
     [engine, dataframes]
   )
 
   /**
-   * Process tool calls from LLM response.
+   * Process parsed tool calls and return results.
    */
   const processToolCalls = useCallback(
-    async (toolCalls: ToolCall[]): Promise<Array<{ role: string; content: string; toolCallId: string }>> => {
-      const results: Array<{ role: string; content: string; toolCallId: string }> = []
+    async (toolCalls: ParsedToolCall[]): Promise<Array<{ name: string; result: ToolResult }>> => {
+      const results: Array<{ name: string; result: ToolResult }> = []
 
       for (const toolCall of toolCalls) {
-        const args = JSON.parse(toolCall.function.arguments)
-        const result: ToolResult = await executeTool(toolCall.function.name, args)
-
-        results.push({
-          role: 'tool',
-          content: JSON.stringify(result),
-          toolCallId: toolCall.id,
-        })
+        console.log(`Executing tool: ${toolCall.name}`, toolCall.arguments)
+        const result: ToolResult = await executeTool(toolCall.name, toolCall.arguments)
+        results.push({ name: toolCall.name, result })
       }
 
       return results
@@ -191,6 +151,7 @@ export function useLLMChat({
 
   /**
    * Send a message and get a response.
+   * Uses manual function calling - parses <tool_call> tags from response content.
    */
   const sendMessage = useCallback(
     async (content: string) => {
@@ -224,62 +185,55 @@ export function useLLMChat({
         conversationHistory.push({ role: 'user', content })
 
         // Call LLM
-        let response = await callLLM(conversationHistory)
-        let choice = response.choices[0]
+        let responseContent = await callLLM(conversationHistory)
 
         // Track chart path from tool results
         let chartPath: string | undefined
 
         // Handle tool calls (may need multiple rounds)
         let maxToolRounds = 5
-        while (choice.message.toolCalls && choice.message.toolCalls.length > 0 && maxToolRounds > 0) {
+        while (hasToolCalls(responseContent) && maxToolRounds > 0) {
           maxToolRounds--
 
+          // Parse tool calls from response
+          const toolCalls = parseToolCalls(responseContent)
+          console.log('Parsed tool calls:', toolCalls)
+
+          if (toolCalls.length === 0) break
+
           // Process all tool calls
-          const toolResults = await processToolCalls(choice.message.toolCalls)
+          const toolResults = await processToolCalls(toolCalls)
 
           // Check for chart in tool results
-          for (const result of toolResults) {
-            try {
-              const parsed = JSON.parse(result.content)
-              if (parsed.chartPath) {
-                chartPath = parsed.chartPath
-              }
-            } catch {
-              // Ignore
+          for (const { result } of toolResults) {
+            if (result.chartPath) {
+              chartPath = result.chartPath
             }
           }
 
-          // Add assistant message with tool calls to history
+          // Add assistant response with tool calls to history
           conversationHistory.push({
             role: 'assistant',
-            content: choice.message.content || '',
-            tool_calls: choice.message.toolCalls.map(tc => ({
-              id: tc.id,
-              type: tc.type,
-              function: {
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              },
-            })),
-          } as ChatCompletionMessageParam)
+            content: responseContent,
+          })
 
-          // Add tool results to history
-          for (const result of toolResults) {
+          // Build tool response in Hermes format and add to history
+          // Format: <tool_response>{"name": "...", "content": {...}}</tool_response>
+          for (const { name, result } of toolResults) {
+            const toolResponse = `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(result)}}\n</tool_response>`
             conversationHistory.push({
               role: 'tool',
-              content: result.content,
-              tool_call_id: result.toolCallId,
+              content: toolResponse,
+              tool_call_id: '0', // Hermes doesn't really use this but web-llm types require it
             } as ChatCompletionMessageParam)
           }
 
           // Call LLM again with tool results
-          response = await callLLM(conversationHistory)
-          choice = response.choices[0]
+          responseContent = await callLLM(conversationHistory)
         }
 
-        // Extract final response content
-        const responseContent = choice.message.content || ''
+        // Remove any remaining tool call tags from final response for display
+        const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
         // Create assistant message
         const assistantMessage: Message = {
@@ -287,10 +241,10 @@ export function useLLMChat({
           role: 'assistant',
           parts: chartPath
             ? [
-                { type: 'text', text: responseContent },
+                { type: 'text', text: displayContent },
                 { type: 'image', image: chartPath },
               ]
-            : [{ type: 'text', text: responseContent }],
+            : [{ type: 'text', text: displayContent }],
         }
 
         setMessages((prev) => [...prev, assistantMessage])
