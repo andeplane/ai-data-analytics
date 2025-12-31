@@ -4,12 +4,18 @@ import pandasaiLoaderCode from '../lib/pandasai-loader.py?raw'
 
 export type PandasAIStatus = 'idle' | 'loading' | 'ready' | 'error'
 
+interface DataframeInfo {
+  rows: number
+  columns: string[]
+}
+
 interface UsePandasAIReturn {
   status: PandasAIStatus
   error: string | null
   loadPandasAI: (apiUrl: string, bearerToken: string) => Promise<void>
   chat: (dataframeName: string, question: string) => Promise<string>
   loadDataframe: (name: string, csvData: string) => Promise<void>
+  getDataframeInfo: (name: string) => Promise<DataframeInfo>
 }
 
 export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn {
@@ -37,6 +43,7 @@ pandasai_modules = await patch_and_load_pandasai("${apiUrl}", "${bearerToken}")
 SmartDataframe = pandasai_modules["SmartDataframe"]
 Agent = pandasai_modules["Agent"]
 llm = pandasai_modules["llm"]
+dataframes = pandasai_modules["dataframes"]
 print("PandasAI loaded successfully!")
 `)
 
@@ -59,15 +66,17 @@ print("PandasAI loaded successfully!")
 
       // Escape the CSV data for Python string
       const escapedCsv = csvData.replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"')
+      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 
       await pyodide.runPythonAsync(`
 import pandas as pd
 from io import StringIO
 
 csv_data = """${escapedCsv}"""
-${name}_df = pd.read_csv(StringIO(csv_data))
-${name} = SmartDataframe(${name}_df, config={"llm": llm})
-print(f"Loaded dataframe '${name}' with {len(${name}_df)} rows")
+_temp_df = pd.read_csv(StringIO(csv_data))
+dataframes["${escapedName}"] = SmartDataframe(_temp_df, config={"llm": llm})
+dataframes["${escapedName}"]._df = _temp_df  # Store raw df for info lookup
+print(f"Loaded dataframe '${escapedName}' with {len(_temp_df)} rows")
 `)
     },
     [pyodide, status]
@@ -79,15 +88,38 @@ print(f"Loaded dataframe '${name}' with {len(${name}_df)} rows")
         throw new Error('PandasAI not ready')
       }
 
-      // Escape question for Python
+      // Escape for Python strings
+      const escapedName = dataframeName.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
       const escapedQuestion = question.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 
       const result = await pyodide.runPythonAsync(`
-result = ${dataframeName}.chat("${escapedQuestion}")
+result = dataframes["${escapedName}"].chat("${escapedQuestion}")
 str(result)
 `)
 
       return String(result)
+    },
+    [pyodide, status]
+  )
+
+  const getDataframeInfo = useCallback(
+    async (name: string): Promise<DataframeInfo> => {
+      if (!pyodide || status !== 'ready') {
+        throw new Error('PandasAI not ready')
+      }
+
+      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+      const result = await pyodide.runPythonAsync(`
+import json
+_df = dataframes["${escapedName}"]._df
+json.dumps({
+    "rows": len(_df),
+    "columns": list(_df.columns)
+})
+`)
+
+      return JSON.parse(String(result))
     },
     [pyodide, status]
   )
@@ -98,5 +130,6 @@ str(result)
     loadPandasAI,
     chat,
     loadDataframe,
+    getDataframeInfo,
   }
 }

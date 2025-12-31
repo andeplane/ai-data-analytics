@@ -105,10 +105,14 @@ async def patch_and_load_pandasai(api_url: str, bearer_token: str):
     # Create the LLM instance
     llm = CustomLLM(api_url=api_url, bearer_token=bearer_token)
 
+    # Dict to store dataframes by filename
+    dataframes = {}
+
     print("PandasAI loaded successfully!")
 
     return {
         "SmartDataframe": SmartDataframe,
         "Agent": Agent,
         "llm": llm,
+        "dataframes": dataframes,
     }
