@@ -7,10 +7,10 @@ os.environ["SCARF_NO_ANALYTICS"] = "true"
 _RUNNING_IN_BROWSER = sys.platform == "emscripten" and "pyodide" in sys.modules
 
 
-async def patch_and_load_pandasai(api_url: str, bearer_token: str):
+async def patch_and_load_pandasai():
     """
     Patch PandasAI to work in Pyodide and return configured classes.
-    Uses a custom LLM that calls an external API.
+    Uses web-llm via JavaScript interop for LLM calls.
     """
     import micropip
     from types import ModuleType
@@ -43,72 +43,67 @@ async def patch_and_load_pandasai(api_url: str, bearer_token: str):
     print("Importing pandasai modules...")
     from pandasai import SmartDataframe, Agent
     from pandasai.llm import LLM
-    import requests
 
-    # Custom LLM that calls external API
-    class CustomLLM(LLM):
-        api_url: str = ""
-        bearer_token: str = ""
-        model: str = "azure/gpt-4.1"
+    # Import JavaScript interop for calling web-llm
+    from js import webllmChat
+    from pyodide.ffi import to_js
+
+    # Custom LLM that calls web-llm via JavaScript interop
+    class WebLLM(LLM):
+        model: str = "Hermes-3-Llama-3.1-8B-q4f16_1-MLC"
         temperature: float = 0.0
-        max_tokens: int = 2000
 
-        def __init__(self, api_url: str, bearer_token: str, **kwargs):
+        def __init__(self, **kwargs):
             super().__init__()
-            self.api_url = api_url
-            self.bearer_token = bearer_token
             for key, value in kwargs.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
 
         def call(self, instruction, context=None):
+            import asyncio
+            
             prompt = instruction.to_string() if hasattr(instruction, 'to_string') else str(instruction)
             
-            messages = []
-            if context and hasattr(context, 'memory'):
-                messages = context.memory.to_openai_messages() if context.memory else []
-            messages.append({"role": "user", "content": prompt})
+            # Add context/memory if available
+            if context and hasattr(context, 'memory') and context.memory:
+                memory_messages = context.memory.to_openai_messages()
+                if memory_messages:
+                    context_str = "\n".join([f"{m['role']}: {m['content']}" for m in memory_messages])
+                    prompt = f"{context_str}\n\nuser: {prompt}"
 
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "maxTokens": self.max_tokens,
-            }
-
-            # Handle token with or without "Bearer " prefix
-            auth_value = self.bearer_token if self.bearer_token.startswith("Bearer ") else f"Bearer {self.bearer_token}"
-            headers = {
-                "Authorization": auth_value,
-                "Content-Type": "application/json",
-                "cdf-version": "alpha",
-            }
-
-            print(f"Sending request to LLM...")
+            print(f"Calling web-llm via JS interop...")
             
-            response = requests.post(self.api_url, json=payload, headers=headers)
+            # Call the JavaScript function exposed by useWebLLM hook
+            # webllmChat is an async JS function, so we need to await the Promise
+            loop = asyncio.get_event_loop()
             
-            if not response.ok:
-                print(f"Error response: {response.status_code}")
-                print(f"Response body: {response.text}")
-                response.raise_for_status()
+            async def call_webllm():
+                result = await webllmChat(prompt)
+                return result
             
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
-            print(f"LLM response received ({len(content)} chars)")
+            # Run the async call
+            if loop.is_running():
+                # We're already in an async context, create a task
+                import pyodide
+                result = pyodide.ffi.run_sync(webllmChat(prompt))
+            else:
+                result = loop.run_until_complete(call_webllm())
+            
+            content = str(result)
+            print(f"web-llm response received ({len(content)} chars)")
             return content
 
         @property
         def type(self) -> str:
-            return "custom"
+            return "webllm"
 
     # Create the LLM instance
-    llm = CustomLLM(api_url=api_url, bearer_token=bearer_token)
+    llm = WebLLM()
 
     # Dict to store dataframes by filename
     dataframes = {}
 
-    print("PandasAI loaded successfully!")
+    print("PandasAI loaded successfully with web-llm!")
 
     return {
         "SmartDataframe": SmartDataframe,

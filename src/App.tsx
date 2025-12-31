@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
+import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
 import { useLLMChat, type Message } from './hooks/useLLMChat'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
@@ -9,9 +10,7 @@ import type { DataFrameInfo } from './lib/systemPrompt'
 function App() {
   const { pyodide, status: pyodideStatus } = usePyodide()
   const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
-  
-  const [apiUrl] = useState('https://api.cognitedata.com/api/v1/projects/andershaf/ai/chat/completions')
-  const [bearerToken] = useState(import.meta.env.VITE_COGNITE_TOKEN || '')
+  const { engine, status: webllmStatus, progress: webllmProgress, progressText: webllmProgressText, elapsedTime, estimatedTimeRemaining, error: webllmError, loadModel } = useWebLLM()
   
   const [dataframes, setDataframes] = useState<DataFrame[]>([])
   const [queuedFiles, setQueuedFiles] = useState<Array<{ name: string; content: string; type: 'csv' | 'json' }>>([])
@@ -24,20 +23,26 @@ function App() {
     head: df.head,
   }))
 
-  // Chat handler using the new LLM chat hook
+  // Chat handler using the LLM chat hook with web-llm engine
   const chat = useLLMChat({
     pyodide,
-    apiUrl,
-    bearerToken,
+    engine,
     dataframes: dataframeInfos,
   })
 
-  // Auto-load PandasAI when Pyodide is ready
+  // Auto-load web-llm model on mount
   useEffect(() => {
-    if (pyodideStatus === 'ready' && pandasStatus === 'idle' && bearerToken) {
-      loadPandasAI(apiUrl, bearerToken)
+    if (webllmStatus === 'idle') {
+      loadModel()
     }
-  }, [pyodideStatus, pandasStatus, apiUrl, bearerToken, loadPandasAI])
+  }, [webllmStatus, loadModel])
+
+  // Auto-load PandasAI when both Pyodide and web-llm are ready
+  useEffect(() => {
+    if (pyodideStatus === 'ready' && webllmStatus === 'ready' && pandasStatus === 'idle') {
+      loadPandasAI()
+    }
+  }, [pyodideStatus, webllmStatus, pandasStatus, loadPandasAI])
 
   // Handle file upload
   const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
@@ -140,6 +145,20 @@ function App() {
     chat.sendMessage(chat.input)
   }, [chat])
 
+  // Compute overall system status
+  const getSystemStatus = () => {
+    if (webllmStatus === 'loading') return { text: 'Loading AI model...', color: 'bg-yellow-500 animate-pulse' }
+    if (webllmStatus === 'error') return { text: `Model error: ${webllmError}`, color: 'bg-red-500' }
+    if (pyodideStatus !== 'ready') return { text: 'Loading Python...', color: 'bg-yellow-500 animate-pulse' }
+    if (pandasStatus === 'loading') return { text: 'Loading PandasAI...', color: 'bg-yellow-500 animate-pulse' }
+    if (pandasStatus === 'error') return { text: 'PandasAI Error', color: 'bg-red-500' }
+    if (pandasStatus === 'ready' && webllmStatus === 'ready') return { text: 'Ready', color: 'bg-green-500' }
+    return { text: 'Initializing...', color: 'bg-yellow-500 animate-pulse' }
+  }
+
+  const systemStatus = getSystemStatus()
+  const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready'
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
       {/* Sidebar */}
@@ -151,11 +170,40 @@ function App() {
             Data Analyst
           </h1>
           <div className="mt-2 flex items-center gap-2 text-xs">
-            <span className={`w-2 h-2 rounded-full ${pandasStatus === 'ready' ? 'bg-green-500' : pandasStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
-            <span className="text-zinc-400">
-              {pandasStatus === 'ready' ? 'Ready' : pandasStatus === 'error' ? 'Error' : 'Loading...'}
-            </span>
+            <span className={`w-2 h-2 rounded-full ${systemStatus.color}`} />
+            <span className="text-zinc-400">{systemStatus.text}</span>
           </div>
+          
+          {/* Model loading progress */}
+          {webllmStatus === 'loading' && (
+            <div className="mt-3">
+              <div className="text-xs text-zinc-500 mb-1 truncate" title={webllmProgressText}>
+                {webllmProgressText}
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-2">
+                <div 
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round(webllmProgress * 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-zinc-500 mt-1">
+                <span>{Math.round(webllmProgress * 100)}%</span>
+                <span>
+                  {formatTime(elapsedTime)}
+                  {estimatedTimeRemaining !== null && (
+                    <span className="text-zinc-600"> • ETA {formatTime(estimatedTimeRemaining)}</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          {/* Model info when ready */}
+          {webllmStatus === 'ready' && (
+            <div className="mt-2 text-xs text-zinc-500">
+              Model: {MODEL_ID.split('-').slice(0, 3).join('-')}
+            </div>
+          )}
         </div>
 
         {/* DataFrames List */}
@@ -188,10 +236,17 @@ function App() {
                 <div className="text-5xl mb-4">💬</div>
                 <p className="text-lg">Start a conversation</p>
                 <p className="text-sm mt-2">
-                  {dataframes.length === 0
+                  {!isSystemReady
+                    ? 'Please wait for the AI model to load...'
+                    : dataframes.length === 0
                     ? 'Upload some data files and ask questions about them'
                     : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
                 </p>
+                {webllmStatus === 'loading' && (
+                  <p className="text-xs text-zinc-600 mt-4">
+                    First load downloads ~5GB model (cached after)
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -220,18 +275,18 @@ function App() {
               onChange={(e) => chat.setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
               placeholder={
-                pandasStatus !== 'ready'
-                  ? 'Waiting for system to load...'
+                !isSystemReady
+                  ? 'Waiting for AI model to load...'
                   : dataframes.length === 0
                   ? 'Upload a file first, or just say hi!'
                   : 'Ask about your data or just chat...'
               }
-              disabled={chat.isLoading}
+              disabled={chat.isLoading || !isSystemReady}
               className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
             />
             <button
               onClick={handleSendMessage}
-              disabled={chat.isLoading || !chat.input.trim()}
+              disabled={chat.isLoading || !chat.input.trim() || !isSystemReady}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg text-sm font-medium transition-colors"
             >
               {chat.isLoading ? (

@@ -13,7 +13,7 @@ interface DataframeInfo {
 interface UsePandasAIReturn {
   status: PandasAIStatus
   error: string | null
-  loadPandasAI: (apiUrl: string, bearerToken: string) => Promise<void>
+  loadPandasAI: () => Promise<void>
   chat: (dataframeName: string, question: string) => Promise<string>
   loadDataframe: (name: string, csvData: string) => Promise<void>
   getDataframeInfo: (name: string) => Promise<DataframeInfo>
@@ -24,9 +24,16 @@ export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn
   const [error, setError] = useState<string | null>(null)
 
   const loadPandasAI = useCallback(
-    async (apiUrl: string, bearerToken: string) => {
+    async () => {
       if (!pyodide) {
         setError('Pyodide not loaded')
+        setStatus('error')
+        return
+      }
+
+      // Check if web-llm is ready (webllmChat function should be exposed)
+      if (!(window as unknown as Record<string, unknown>).webllmChat) {
+        setError('web-llm not ready - please wait for model to load')
         setStatus('error')
         return
       }
@@ -38,9 +45,9 @@ export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn
         // First, run the patch code to define the function
         await pyodide.runPythonAsync(pandasaiLoaderCode)
 
-        // Then call the patch function with the API URL and bearer token
+        // Then call the patch function (no longer needs API URL or bearer token)
         await pyodide.runPythonAsync(`
-pandasai_modules = await patch_and_load_pandasai("${apiUrl}", "${bearerToken}")
+pandasai_modules = await patch_and_load_pandasai()
 SmartDataframe = pandasai_modules["SmartDataframe"]
 Agent = pandasai_modules["Agent"]
 llm = pandasai_modules["llm"]

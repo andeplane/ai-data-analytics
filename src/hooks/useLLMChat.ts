@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import type { PyodideInterface } from 'pyodide'
+import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { tools } from '../lib/tools'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
@@ -27,14 +28,6 @@ interface ToolCall {
   }
 }
 
-// Message format for the API - supports both simple and tool-related messages
-interface APIMessage {
-  role: string
-  content: string | null
-  toolCalls?: ToolCall[]
-  toolCallId?: string
-}
-
 interface LLMResponse {
   choices: Array<{
     message: {
@@ -48,8 +41,7 @@ interface LLMResponse {
 
 interface UseLLMChatOptions {
   pyodide: PyodideInterface | null
-  apiUrl: string
-  bearerToken: string
+  engine: MLCEngineInterface | null
   dataframes: DataFrameInfo[]
 }
 
@@ -58,13 +50,38 @@ function generateId(): string {
 }
 
 /**
+ * Extract the output message from a ToolCallOutputParseError.
+ * web-llm throws this when it tries to parse a normal response as a tool call.
+ * The error message contains the actual output which we can extract.
+ */
+function extractMessageFromToolCallError(error: Error): string | null {
+  const errorMsg = error.message
+  // Error format: "...Got outputMessage: <actual message>\nGot error:..."
+  const match = errorMsg.match(/Got outputMessage:\s*([\s\S]*?)(?:\nGot error:|$)/)
+  if (match && match[1]) {
+    return match[1].trim()
+  }
+  return null
+}
+
+/**
+ * Check if an error is a ToolCallOutputParseError from web-llm
+ */
+function isToolCallParseError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes('error encountered when parsing outputMessage for function calling')
+  }
+  return false
+}
+
+/**
  * Main LLM chat orchestration hook.
  * Handles conversation, tool calling, and response rendering.
+ * Uses web-llm for local in-browser inference.
  */
 export function useLLMChat({
   pyodide,
-  apiUrl,
-  bearerToken,
+  engine,
   dataframes,
 }: UseLLMChatOptions) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -74,49 +91,79 @@ export function useLLMChat({
   const { executeTool } = useToolExecutor({ pyodide })
 
   /**
-   * Call the LLM API with messages and tools.
+   * Call the local web-llm engine with messages and tools.
    */
   const callLLM = useCallback(
-    async (conversationMessages: APIMessage[]): Promise<LLMResponse> => {
+    async (conversationMessages: ChatCompletionMessageParam[]): Promise<LLMResponse> => {
+      if (!engine) {
+        throw new Error('web-llm engine not ready')
+      }
+
       const systemPrompt = buildSystemPrompt(dataframes)
 
-      const payload = {
-        model: 'azure/gpt-4.1',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...conversationMessages,
-        ],
-        tools: dataframes.length > 0 ? tools : undefined,
-        temperature: 0.7,
-        maxTokens: 2000,
+      // Build the full messages array with system prompt
+      const fullMessages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        ...conversationMessages,
+      ]
+
+      console.log('Sending to web-llm:', JSON.stringify(fullMessages, null, 2))
+
+      try {
+        const response = await engine.chat.completions.create({
+          messages: fullMessages,
+          tools: dataframes.length > 0 ? tools : undefined,
+          tool_choice: dataframes.length > 0 ? 'auto' : undefined,
+          temperature: 0.7,
+          max_tokens: 2000,
+        })
+
+        console.log('web-llm response:', JSON.stringify(response, null, 2))
+
+        // Convert web-llm response format to our internal format
+        const choice = response.choices[0]
+        return {
+          choices: [{
+            message: {
+              role: choice.message.role,
+              content: choice.message.content,
+              toolCalls: choice.message.tool_calls?.map(tc => ({
+                id: tc.id,
+                type: tc.type as 'function',
+                function: {
+                  name: tc.function.name,
+                  arguments: tc.function.arguments,
+                },
+              })),
+            },
+            finishReason: choice.finish_reason,
+          }],
+        }
+      } catch (err) {
+        // web-llm throws ToolCallOutputParseError when the model responds with
+        // plain text instead of a tool call (which is valid behavior).
+        // We extract the actual message from the error and return it.
+        if (isToolCallParseError(err)) {
+          console.log('Model responded with text instead of tool call, extracting message...')
+          const extractedMessage = extractMessageFromToolCallError(err as Error)
+          if (extractedMessage) {
+            return {
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: extractedMessage,
+                  toolCalls: undefined,
+                },
+                finishReason: 'stop',
+              }],
+            }
+          }
+        }
+        // Re-throw other errors
+        throw err
       }
-
-      console.log('Sending to LLM:', JSON.stringify(payload, null, 2))
-
-      const authValue = bearerToken.startsWith('Bearer ')
-        ? bearerToken
-        : `Bearer ${bearerToken}`
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: authValue,
-          'Content-Type': 'application/json',
-          'cdf-version': 'alpha',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`LLM API error: ${response.status} - ${errorText}`)
-      }
-
-      const result = await response.json()
-      console.log('LLM response:', JSON.stringify(result, null, 2))
-      return result
     },
-    [apiUrl, bearerToken, dataframes]
+    [engine, dataframes]
   )
 
   /**
@@ -148,6 +195,10 @@ export function useLLMChat({
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim()) return
+      if (!engine) {
+        console.error('Cannot send message: web-llm engine not ready')
+        return
+      }
 
       // Add user message to UI
       const userMessage: Message = {
@@ -161,8 +212,8 @@ export function useLLMChat({
 
       try {
         // Build conversation history for API
-        const conversationHistory: APIMessage[] = messages.map((msg) => ({
-          role: msg.role,
+        const conversationHistory: ChatCompletionMessageParam[] = messages.map((msg) => ({
+          role: msg.role as 'user' | 'assistant' | 'system',
           content: msg.parts
             .filter((p) => p.type === 'text')
             .map((p) => p.text)
@@ -202,17 +253,24 @@ export function useLLMChat({
           // Add assistant message with tool calls to history
           conversationHistory.push({
             role: 'assistant',
-            content: choice.message.content,
-            toolCalls: choice.message.toolCalls,
-          })
+            content: choice.message.content || '',
+            tool_calls: choice.message.toolCalls.map(tc => ({
+              id: tc.id,
+              type: tc.type,
+              function: {
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              },
+            })),
+          } as ChatCompletionMessageParam)
 
           // Add tool results to history
           for (const result of toolResults) {
             conversationHistory.push({
               role: 'tool',
               content: result.content,
-              toolCallId: result.toolCallId,
-            })
+              tool_call_id: result.toolCallId,
+            } as ChatCompletionMessageParam)
           }
 
           // Call LLM again with tool results
@@ -255,7 +313,7 @@ export function useLLMChat({
         setStatus('error')
       }
     },
-    [messages, callLLM, processToolCalls, executeTool]
+    [messages, callLLM, processToolCalls, engine]
   )
 
   const stop = useCallback(() => {
@@ -281,4 +339,3 @@ export function useLLMChat({
 }
 
 export { generateId }
-
