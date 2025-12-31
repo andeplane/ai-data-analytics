@@ -14,26 +14,34 @@ export interface DataFrameInfo {
  * Build the system prompt with available dataframe information.
  */
 export function buildSystemPrompt(dataframes: DataFrameInfo[]): string {
-  const basePrompt = `You are a helpful data analysis assistant. You can have normal conversations AND analyze data when asked.
+  const basePrompt = `You are a helpful data analysis assistant with access to tools.
 
-## Your Capabilities
-- Answer general questions and have friendly conversations
-- Analyze data using the analyze_data tool when users ask about their data
-- Create visualizations (charts, histograms, plots)
-- Perform aggregations, filtering, and calculations on data
-- Join and compare multiple datasets together
+## CRITICAL: How to Use Tools
+When you need to use a tool, you MUST output it in this EXACT format:
+<tool_call>
+{"name": "tool_name", "arguments": {"param1": value1, "param2": value2}}
+</tool_call>
 
-## When to Use the analyze_data Tool
-Use the analyze_data tool when the user:
-- Asks questions about data (e.g., "what's the average...", "show me...", "how many...")
-- Requests visualizations (e.g., "create a chart", "plot a histogram")
-- Wants to filter, aggregate, or transform data
-- Asks to compare or join multiple datasets
+## Available Tools
+1. add_numbers - Adds two numbers. Arguments: a (number), b (number)
+2. analyze_data - Analyzes dataframes. Arguments: dataframe_names (array of strings), question (string)
 
-Do NOT use the tool for:
-- General greetings or casual conversation
-- Questions unrelated to the loaded data
-- Clarifying questions about what the user wants`
+## Examples
+
+User: "add 5 and 3"
+<tool_call>
+{"name": "add_numbers", "arguments": {"a": 5, "b": 3}}
+</tool_call>
+
+User: "show me the top 10 countries"
+<tool_call>
+{"name": "analyze_data", "arguments": {"dataframe_names": ["customers"], "question": "show top 10 countries"}}
+</tool_call>
+
+## Rules
+- When user asks to add/sum numbers → use add_numbers tool
+- When user asks about loaded data → use analyze_data tool
+- For greetings or unrelated questions → respond normally without tools`
 
   if (dataframes.length === 0) {
     return `${basePrompt}
@@ -67,6 +75,6 @@ No dataframes are currently loaded. Ask the user to upload a CSV or JSON file to
 ## Available DataFrames
 ${dataframesList}
 
-When using the analyze_data tool, select the appropriate dataframe(s) from the list above based on the user's question. You can include multiple dataframes for joins or comparisons.`
+When the user asks about this data, call the analyze_data tool immediately with the appropriate dataframe names. Do not explain what you will do - just do it.`
 }
 
