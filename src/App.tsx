@@ -1,162 +1,279 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { ChatSection } from '@llamaindex/chat-ui'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
+import { usePandasAIChat, generateId, type Message } from './hooks/usePandasAIChat'
+import { FileUpload } from './components/FileUpload'
+import { DataFrameList, type DataFrame } from './components/DataFrameList'
+import '@llamaindex/chat-ui/styles/markdown.css'
 
 function App() {
-  const { pyodide, status: pyodideStatus, error: pyodideError } = usePyodide()
-  const { status: pandasStatus, error: pandasError, loadPandasAI, chat, loadDataframe } = usePandasAI(pyodide)
+  const { pyodide, status: pyodideStatus } = usePyodide()
+  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
   
-  const [apiUrl, setApiUrl] = useState('https://api.cognitedata.com/api/v1/projects/andershaf/ai/chat/completions')
-  const [bearerToken, setBearerToken] = useState(import.meta.env.VITE_COGNITE_TOKEN || '')
-  const [logs, setLogs] = useState<string[]>([])
-  const [question, setQuestion] = useState('')
-  const [csvData, setCsvData] = useState('')
+  const [apiUrl] = useState('https://api.cognitedata.com/api/v1/projects/andershaf/ai/chat/completions')
+  const [bearerToken] = useState(import.meta.env.VITE_COGNITE_TOKEN || '')
+  
+  const [dataframes, setDataframes] = useState<DataFrame[]>([])
+  const [activeDataframe, setActiveDataframe] = useState<string | null>(null)
+  const [queuedFiles, setQueuedFiles] = useState<Array<{ name: string; content: string; type: 'csv' | 'json' }>>([])
 
-  const addLog = (msg: string) => {
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`])
-  }
+  // Chat handler for @llamaindex/chat-ui
+  const chatHandler = usePandasAIChat({ pyodide, activeDataframe })
 
-  const handleLoadPandasAI = async () => {
-    if (!apiUrl || !bearerToken) {
-      addLog('ERROR: Please enter API URL and Bearer Token')
+  // Auto-load PandasAI when Pyodide is ready
+  useEffect(() => {
+    if (pyodideStatus === 'ready' && pandasStatus === 'idle' && bearerToken) {
+      loadPandasAI(apiUrl, bearerToken)
+    }
+  }, [pyodideStatus, pandasStatus, apiUrl, bearerToken, loadPandasAI])
+
+  // Handle file upload
+  const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
+    // If PandasAI is not ready, queue the file
+    if (pandasStatus !== 'ready') {
+      setQueuedFiles(prev => [...prev, { name, content, type }])
+      // Add to dataframes list immediately (will be processed when ready)
+      setDataframes(prev => {
+        const existing = prev.findIndex(df => df.name === name)
+        if (existing >= 0) return prev
+        const newDf: DataFrame = { name, rows: 0, columns: [] }
+        return [...prev, newDf]
+      })
+      if (!activeDataframe) {
+        setActiveDataframe(name)
+      }
       return
     }
-    addLog('Loading PandasAI...')
-    try {
-      await loadPandasAI(apiUrl, bearerToken)
-      addLog('PandasAI loaded successfully!')
-    } catch (err) {
-      addLog(`ERROR: ${err}`)
-    }
-  }
 
-  const handleLoadCsv = async () => {
-    if (!csvData) {
-      addLog('ERROR: Please enter CSV data')
+    try {
+      // Convert JSON to CSV if needed
+      let csvContent = content
+      if (type === 'json') {
+        const json = JSON.parse(content)
+        const arr = Array.isArray(json) ? json : [json]
+        if (arr.length === 0) {
+          throw new Error('JSON array is empty')
+        }
+        const headers = Object.keys(arr[0])
+        const rows = arr.map((obj: Record<string, unknown>) => headers.map(h => String(obj[h] ?? '')).join(','))
+        csvContent = [headers.join(','), ...rows].join('\n')
+      }
+
+      await loadDataframe(name, csvContent)
+      
+      // Get dataframe info
+      const info = await getDataframeInfo(name)
+      
+      setDataframes(prev => {
+        const existing = prev.findIndex(df => df.name === name)
+        const newDf: DataFrame = { name, rows: info.rows, columns: info.columns }
+        if (existing >= 0) {
+          const updated = [...prev]
+          updated[existing] = newDf
+          return updated
+        }
+        return [...prev, newDf]
+      })
+      
+      // Auto-select if first dataframe
+      if (!activeDataframe) {
+        setActiveDataframe(name)
+      }
+    } catch (err) {
+      console.error('Failed to load file:', err)
+      alert(`Failed to load file: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [loadDataframe, getDataframeInfo, activeDataframe, pandasStatus])
+
+  // Process queued files when PandasAI becomes ready
+  useEffect(() => {
+    if (pandasStatus === 'ready' && queuedFiles.length > 0 && pyodide) {
+      const processQueue = async () => {
+        const filesToProcess = [...queuedFiles]
+        setQueuedFiles([])
+        for (const file of filesToProcess) {
+          try {
+            // Convert JSON to CSV if needed
+            let csvContent = file.content
+            if (file.type === 'json') {
+              const json = JSON.parse(file.content)
+              const arr = Array.isArray(json) ? json : [json]
+              if (arr.length === 0) {
+                throw new Error('JSON array is empty')
+              }
+              const headers = Object.keys(arr[0])
+              const rows = arr.map((obj: Record<string, unknown>) => headers.map(h => String(obj[h] ?? '')).join(','))
+              csvContent = [headers.join(','), ...rows].join('\n')
+            }
+
+            await loadDataframe(file.name, csvContent)
+            
+            // Get dataframe info
+            const info = await getDataframeInfo(file.name)
+            
+            setDataframes(prev => {
+              const existing = prev.findIndex(df => df.name === file.name)
+              const newDf: DataFrame = { name: file.name, rows: info.rows, columns: info.columns }
+              if (existing >= 0) {
+                const updated = [...prev]
+                updated[existing] = newDf
+                return updated
+              }
+              return [...prev, newDf]
+            })
+            
+            // Auto-select if first dataframe
+            if (!activeDataframe) {
+              setActiveDataframe(file.name)
+            }
+          } catch (err) {
+            console.error('Failed to process queued file:', err)
+          }
+        }
+      }
+      processQueue()
+    }
+  }, [pandasStatus, queuedFiles, pyodide, loadDataframe, getDataframeInfo, activeDataframe])
+
+  // Custom send message handler
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || !activeDataframe) return
+
+    // If PandasAI is not ready, show waiting message
+    if (pandasStatus !== 'ready') {
+      const waitingMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Waiting for PandasAI to load... Please wait a moment and try again.' }],
+      }
+      if (chatHandler.setMessages) {
+        chatHandler.setMessages([...chatHandler.messages, waitingMessage])
+      }
       return
     }
-    addLog('Loading CSV data...')
-    try {
-      await loadDataframe('data', csvData)
-      addLog('CSV loaded as "data" dataframe')
-    } catch (err) {
-      addLog(`ERROR: ${err}`)
-    }
-  }
 
-  const handleChat = async () => {
-    if (!question) {
-      addLog('ERROR: Please enter a question')
-      return
+    const userMessage: Message = {
+      id: generateId(),
+      role: 'user',
+      parts: [{ type: 'text', text: content }],
     }
-    addLog(`Asking: ${question}`)
-    try {
-      const result = await chat('data', question)
-      addLog(`Answer: ${result}`)
-    } catch (err) {
-      addLog(`ERROR: ${err}`)
-    }
-  }
+
+    await chatHandler.sendMessage(userMessage)
+    chatHandler.setInput('')
+  }, [chatHandler, activeDataframe, pandasStatus])
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Data Analyst - Dev Mode</h1>
-        
-        {/* Status */}
-        <div className="mb-8 p-4 bg-zinc-900 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">Status</h2>
-          <p>Pyodide: <span className={pyodideStatus === 'ready' ? 'text-green-400' : pyodideStatus === 'error' ? 'text-red-400' : 'text-yellow-400'}>{pyodideStatus}</span></p>
-          {pyodideError && <p className="text-red-400 text-sm">{pyodideError}</p>}
-          <p>PandasAI: <span className={pandasStatus === 'ready' ? 'text-green-400' : pandasStatus === 'error' ? 'text-red-400' : 'text-yellow-400'}>{pandasStatus}</span></p>
-          {pandasError && <p className="text-red-400 text-sm mt-1 whitespace-pre-wrap">{pandasError}</p>}
-        </div>
-
-        {/* API Config */}
-        <div className="mb-8 p-4 bg-zinc-900 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">LLM API Config</h2>
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="API URL (e.g., https://api.openai.com/v1/chat/completions)"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
-            />
-            <input
-              type="password"
-              value={bearerToken}
-              onChange={(e) => setBearerToken(e.target.value)}
-              placeholder="Bearer Token"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
-            />
-            <button
-              onClick={handleLoadPandasAI}
-              disabled={pyodideStatus !== 'ready'}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-4 py-2 rounded text-sm font-medium"
-            >
-              Load PandasAI
-            </button>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
+        {/* Sidebar */}
+        <aside className="w-72 border-r border-zinc-800 flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b border-zinc-800">
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              <span className="text-2xl">📊</span>
+              Data Analyst
+            </h1>
+            <div className="mt-2 flex items-center gap-2 text-xs">
+              <span className={`w-2 h-2 rounded-full ${pandasStatus === 'ready' ? 'bg-green-500' : pandasStatus === 'error' ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`} />
+              <span className="text-zinc-400">
+                {pandasStatus === 'ready' ? 'Ready' : pandasStatus === 'error' ? 'Error' : 'Loading...'}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* CSV Input */}
-        <div className="mb-8 p-4 bg-zinc-900 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">CSV Data</h2>
-          <textarea
-            value={csvData}
-            onChange={(e) => setCsvData(e.target.value)}
-            placeholder="name,age,city&#10;John,30,NYC&#10;Jane,25,LA"
-            className="w-full h-32 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm font-mono"
-          />
-          <button
-            onClick={handleLoadCsv}
-            disabled={pandasStatus !== 'ready'}
-            className="mt-2 bg-green-600 hover:bg-green-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-4 py-2 rounded text-sm font-medium"
-          >
-            Load CSV
-          </button>
-        </div>
-
-        {/* Chat */}
-        <div className="mb-8 p-4 bg-zinc-900 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">Chat</h2>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="What is the average age?"
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm"
-              onKeyDown={(e) => e.key === 'Enter' && handleChat()}
+          {/* DataFrames List */}
+          <div className="flex-1 p-4 overflow-y-auto">
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+              DataFrames
+            </h2>
+            <DataFrameList 
+              dataframes={dataframes} 
+              activeDataframe={activeDataframe}
+              onSelect={setActiveDataframe}
             />
-            <button
-              onClick={handleChat}
-              disabled={pandasStatus !== 'ready'}
-              className="bg-purple-600 hover:bg-purple-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-4 py-2 rounded text-sm font-medium"
-            >
-              Ask
-            </button>
           </div>
-        </div>
 
-        {/* Logs */}
-        <div className="p-4 bg-zinc-900 rounded-lg">
-          <h2 className="text-lg font-semibold mb-2">Logs</h2>
-          <div className="h-64 overflow-y-auto bg-black rounded p-3 font-mono text-xs">
-            {logs.length === 0 ? (
-              <p className="text-zinc-500">No logs yet...</p>
-            ) : (
-              logs.map((log, i) => (
-                <p key={i} className={log.includes('ERROR') ? 'text-red-400' : 'text-zinc-300'}>
-                  {log}
-                </p>
-              ))
-            )}
+          {/* File Upload */}
+          <div className="p-4 border-t border-zinc-800">
+            <FileUpload 
+              onFileLoad={handleFileLoad}
+            />
           </div>
-        </div>
+        </aside>
+
+        {/* Main Content - Chat Area */}
+        <main className="flex-1 flex flex-col">
+          {!activeDataframe ? (
+            <div className="flex-1 flex items-center justify-center text-zinc-500">
+              <div className="text-center">
+                <div className="text-5xl mb-4">📁</div>
+                <p className="text-lg">Upload a CSV or JSON file to get started</p>
+                <p className="text-sm mt-2">Then ask questions about your data</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col h-screen">
+              {/* Active DataFrame Header */}
+              <div className="p-4 border-b border-zinc-800 bg-zinc-900/50">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📊</span>
+                  <span className="font-medium">{activeDataframe}</span>
+                  <span className="text-xs text-zinc-500">
+                    ({dataframes.find(df => df.name === activeDataframe)?.rows} rows)
+                  </span>
+                </div>
+              </div>
+
+              {/* Chat Section */}
+              <div className="flex-1 overflow-hidden">
+                <ChatSection 
+                  handler={{
+                    messages: chatHandler.messages,
+                    status: chatHandler.status,
+                    sendMessage: chatHandler.sendMessage,
+                    stop: chatHandler.stop,
+                    setMessages: chatHandler.setMessages,
+                  }}
+                />
+              </div>
+
+              {/* Custom Input - fallback if ChatSection doesn't render input */}
+              <div className="p-4 border-t border-zinc-800 bg-zinc-900">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={chatHandler.input}
+                    onChange={(e) => chatHandler.setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(chatHandler.input)}
+                    placeholder="Ask a question about your data..."
+                    disabled={chatHandler.isLoading}
+                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                  />
+                  <button
+                    onClick={() => handleSendMessage(chatHandler.input)}
+                    disabled={chatHandler.isLoading || !chatHandler.input.trim() || pandasStatus !== 'ready'}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {chatHandler.isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Thinking...
+                      </span>
+                    ) : pandasStatus !== 'ready' ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin" />
+                        Loading...
+                      </span>
+                    ) : (
+                      'Send'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
-    </div>
   )
 }
 
