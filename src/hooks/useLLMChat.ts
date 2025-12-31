@@ -139,7 +139,6 @@ export function useLLMChat({
       const results: Array<{ name: string; result: ToolResult }> = []
 
       for (const toolCall of toolCalls) {
-        console.log(`Executing tool: ${toolCall.name}`, toolCall.arguments)
         const result: ToolResult = await executeTool(toolCall.name, toolCall.arguments)
         results.push({ name: toolCall.name, result })
       }
@@ -197,12 +196,19 @@ export function useLLMChat({
 
           // Parse tool calls from response
           const toolCalls = parseToolCalls(responseContent)
-          console.log('Parsed tool calls:', toolCalls)
-
+          
           if (toolCalls.length === 0) break
+
+          for (const tc of toolCalls) {
+            console.log(`🔧 CALLING TOOL: ${tc.name}`, tc.arguments)
+          }
 
           // Process all tool calls
           const toolResults = await processToolCalls(toolCalls)
+          
+          for (const { name, result } of toolResults) {
+            console.log(`✅ TOOL RESPONSE [${name}]:`, result)
+          }
 
           // Check for chart in tool results
           for (const { result } of toolResults) {
@@ -218,15 +224,18 @@ export function useLLMChat({
           })
 
           // Build tool response in Hermes format and add to history
-          // Format: <tool_response>{"name": "...", "content": {...}}</tool_response>
-          for (const { name, result } of toolResults) {
-            const toolResponse = `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(result)}}\n</tool_response>`
-            conversationHistory.push({
-              role: 'tool',
-              content: toolResponse,
-              tool_call_id: '0', // Hermes doesn't really use this but web-llm types require it
-            } as ChatCompletionMessageParam)
-          }
+          // Use 'user' role since 'tool' role requires automatic function calling mode
+          // The model identifies tool responses by the <tool_response> tags, not the role
+          const toolResponseContent = toolResults
+            .map(({ name, result }) => 
+              `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(result)}}\n</tool_response>`
+            )
+            .join('\n')
+          
+          conversationHistory.push({
+            role: 'user',
+            content: toolResponseContent,
+          })
 
           // Call LLM again with tool results
           responseContent = await callLLM(conversationHistory)
