@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { loadPyodide, PyodideInterface } from 'pyodide'
+import { loadPyodide } from 'pyodide'
+import type { PyodideInterface } from 'pyodide'
 
 export type PyodideStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -25,13 +26,13 @@ export function usePyodide(): UsePyodideReturn {
 
       try {
         const py = await loadPyodide({
-          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.0/full/',
+          indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.6/full/',
         })
 
         if (!mounted) return
 
-        // Load pandas
-        await py.loadPackage('pandas')
+        // Load essential packages (from Pyodide distribution)
+        await py.loadPackage(['micropip', 'pandas', 'requests', 'pillow', 'matplotlib'])
 
         if (!mounted) return
 
