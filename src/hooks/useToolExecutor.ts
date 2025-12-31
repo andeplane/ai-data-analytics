@@ -97,10 +97,20 @@ else:
                 chart_path = charts[0]
                 print(f"Found chart: {chart_path}")
         
+        # Convert chart to base64 data URL so browser can display it
+        chart_data_url = None
+        if chart_path and os.path.exists(chart_path):
+            import base64
+            with open(chart_path, 'rb') as f:
+                chart_bytes = f.read()
+            chart_base64 = base64.b64encode(chart_bytes).decode('utf-8')
+            chart_data_url = f"data:image/png;base64,{chart_base64}"
+            print(f"Converted chart to data URL ({len(chart_base64)} chars)")
+        
         result_json = json.dumps({
             "success": True,
             "result": result_str,
-            "chartPath": chart_path
+            "chartPath": chart_data_url
         })
     except Exception as e:
         import traceback
