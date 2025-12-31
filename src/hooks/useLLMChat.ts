@@ -82,6 +82,22 @@ function removeToolCallsFromContent(content: string): string {
 }
 
 /**
+ * Sanitize tool result for LLM consumption.
+ * Removes chartPath (base64 image data) to avoid polluting the context window.
+ * If an image was generated, adds a text message to inform the LLM.
+ */
+function sanitizeToolResultForLLM(result: ToolResult): Omit<ToolResult, 'chartPath'> {
+  const { chartPath, ...sanitized } = result
+  
+  if (chartPath) {
+    // Append message to inform the LLM that an image was shown to the user
+    sanitized.result = `${sanitized.result}\n\n[An image/chart with the result has been displayed to the user.]`
+  }
+  
+  return sanitized
+}
+
+/**
  * Main LLM chat orchestration hook.
  * Handles conversation, tool calling, and response rendering.
  * Uses web-llm for local in-browser inference with manual function calling.
@@ -226,9 +242,10 @@ export function useLLMChat({
           // Build tool response in Hermes format and add to history
           // Use 'user' role since 'tool' role requires automatic function calling mode
           // The model identifies tool responses by the <tool_response> tags, not the role
+          // Use sanitized results to avoid sending base64 image data to the LLM
           const toolResponseContent = toolResults
             .map(({ name, result }) => 
-              `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(result)}}\n</tool_response>`
+              `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(sanitizeToolResultForLLM(result))}}\n</tool_response>`
             )
             .join('\n')
           
