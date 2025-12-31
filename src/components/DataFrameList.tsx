@@ -2,6 +2,7 @@ interface DataFrame {
   name: string
   rows: number
   columns: string[]
+  head: Record<string, unknown>[]
 }
 
 interface DataFrameListProps {

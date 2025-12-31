@@ -21,6 +21,7 @@ function App() {
     name: df.name,
     rows: df.rows,
     columns: df.columns,
+    head: df.head,
   }))
 
   // Chat handler using the new LLM chat hook
@@ -47,7 +48,7 @@ function App() {
       setDataframes(prev => {
         const existing = prev.findIndex(df => df.name === name)
         if (existing >= 0) return prev
-        const newDf: DataFrame = { name, rows: 0, columns: [] }
+        const newDf: DataFrame = { name, rows: 0, columns: [], head: [] }
         return [...prev, newDf]
       })
       return
@@ -74,7 +75,7 @@ function App() {
       
       setDataframes(prev => {
         const existing = prev.findIndex(df => df.name === name)
-        const newDf: DataFrame = { name, rows: info.rows, columns: info.columns }
+        const newDf: DataFrame = { name, rows: info.rows, columns: info.columns, head: info.head }
         if (existing >= 0) {
           const updated = [...prev]
           updated[existing] = newDf
@@ -116,7 +117,7 @@ function App() {
             
             setDataframes(prev => {
               const existing = prev.findIndex(df => df.name === file.name)
-              const newDf: DataFrame = { name: file.name, rows: info.rows, columns: info.columns }
+              const newDf: DataFrame = { name: file.name, rows: info.rows, columns: info.columns, head: info.head }
               if (existing >= 0) {
                 const updated = [...prev]
                 updated[existing] = newDf

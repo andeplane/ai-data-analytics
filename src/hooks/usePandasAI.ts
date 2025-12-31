@@ -7,6 +7,7 @@ export type PandasAIStatus = 'idle' | 'loading' | 'ready' | 'error'
 interface DataframeInfo {
   rows: number
   columns: string[]
+  head: Record<string, unknown>[]
 }
 
 interface UsePandasAIReturn {
@@ -115,7 +116,8 @@ import json
 _df = dataframes["${escapedName}"]._df
 json.dumps({
     "rows": len(_df),
-    "columns": list(_df.columns)
+    "columns": list(_df.columns),
+    "head": _df.head(5).to_dict('records')
 })
 `)
 

@@ -7,6 +7,7 @@ export interface DataFrameInfo {
   name: string
   rows: number
   columns: string[]
+  head: Record<string, unknown>[]
 }
 
 /**
@@ -42,8 +43,24 @@ No dataframes are currently loaded. Ask the user to upload a CSV or JSON file to
   }
 
   const dataframesList = dataframes
-    .map((df) => `- **${df.name}** (${df.rows.toLocaleString()} rows): [${df.columns.join(', ')}]`)
-    .join('\n')
+    .map((df) => {
+      const header = `### ${df.name}\n- **Rows:** ${df.rows.toLocaleString()}\n- **Columns:** ${df.columns.join(', ')}`
+      
+      // Format head as a simple table
+      if (df.head && df.head.length > 0) {
+        const cols = df.columns.slice(0, 6) // Limit columns to keep prompt size reasonable
+        const headerRow = `| ${cols.join(' | ')} |`
+        const separator = `| ${cols.map(() => '---').join(' | ')} |`
+        const dataRows = df.head.slice(0, 3).map(row => 
+          `| ${cols.map(col => String(row[col] ?? '').substring(0, 20)).join(' | ')} |`
+        ).join('\n')
+        
+        return `${header}\n- **Sample data:**\n${headerRow}\n${separator}\n${dataRows}`
+      }
+      
+      return header
+    })
+    .join('\n\n')
 
   return `${basePrompt}
 
