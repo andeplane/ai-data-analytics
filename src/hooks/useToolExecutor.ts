@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { PyodideInterface } from 'pyodide'
+import type { PyodideProxy } from './usePyodide'
 import type { AnalyzeDataArgs } from '../lib/tools'
 import { isAnalyzeDataArgs } from '../lib/tools'
 
@@ -10,7 +10,7 @@ export interface ToolResult {
 }
 
 interface UseToolExecutorOptions {
-  pyodide: PyodideInterface | null
+  pyodide: PyodideProxy | null
 }
 
 /**
@@ -177,4 +177,3 @@ result_json
     executeAnalyzeData,
   }
 }
-

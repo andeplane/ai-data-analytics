@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { PyodideInterface } from 'pyodide'
+import type { PyodideProxy } from './usePyodide'
 
 export interface DataFrame {
   name: string
@@ -15,7 +15,7 @@ interface QueuedFile {
 }
 
 interface UseDataframesOptions {
-  pyodide: PyodideInterface | null
+  pyodide: PyodideProxy | null
   pandasStatus: 'idle' | 'loading' | 'ready' | 'error'
   loadDataframe: (name: string, csvContent: string) => Promise<void>
   getDataframeInfo: (name: string) => Promise<{ rows: number; columns: string[]; head: Record<string, unknown>[] }>
@@ -128,4 +128,3 @@ export function useDataframes({
     handleFileLoad,
   }
 }
-
