@@ -214,6 +214,14 @@ function App() {
               Model: {MODEL_ID.split('-').slice(0, 3).join('-')}
             </div>
           )}
+          
+          {/* New Conversation button */}
+          <button
+            onClick={() => chat.setMessages?.([])}
+            className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 transition-colors"
+          >
+            + New Conversation
+          </button>
         </div>
 
         {/* DataFrames List */}
