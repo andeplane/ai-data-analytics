@@ -5,6 +5,7 @@ import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
 import { useLLMChat } from './hooks/useLLMChat'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
+import { ChartImagePartUI } from './components/ChartImagePartUI'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import {
   ChatSection,
@@ -259,7 +260,8 @@ function App() {
                 >
                   <ChatMessage.Content>
                     <ChatMessage.Content.Markdown className="prose-invert" />
-                    <ChatMessage.Content.File className="mt-2" />
+                    {/* Render chart images with custom component for proper sizing */}
+                    <ChartImagePartUI className="mt-2" />
                   </ChatMessage.Content>
                 </ChatMessage>
               ))}
