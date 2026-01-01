@@ -3,6 +3,7 @@ import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
 import { useLLMChat, generateId } from './hooks/useLLMChat'
+import { useStarterQuestions } from './hooks/useStarterQuestions'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
@@ -35,6 +36,12 @@ function App() {
   // Chat handler using the LLM chat hook with web-llm engine
   const chat = useLLMChat({
     pyodide,
+    engine,
+    dataframes: dataframeInfos,
+  })
+
+  // Generate context-aware starter questions based on loaded dataframes
+  const { questions: starterQuestions, isLoading: starterQuestionsLoading } = useStarterQuestions({
     engine,
     dataframes: dataframeInfos,
   })
@@ -290,6 +297,8 @@ function App() {
               {/* Starter question bubbles */}
               {isSystemReady && dataframes.length > 0 && (
                 <StarterBubbles
+                  questions={starterQuestions}
+                  isLoading={starterQuestionsLoading}
                   onSelect={(question) => {
                     chat.sendMessage({
                       id: generateId(),

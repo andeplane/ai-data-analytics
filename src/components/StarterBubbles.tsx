@@ -1,19 +1,28 @@
-// Conversation starter suggestions
-const STARTER_QUESTIONS = [
-  'Show first 10 rows',
-  'What columns are in my data?',
-  'Give me a summary of the data',
-  'Show basic statistics',
-]
-
 interface StarterBubblesProps {
+  questions: string[]
   onSelect: (question: string) => void
+  isLoading?: boolean
 }
 
-export function StarterBubbles({ onSelect }: StarterBubblesProps) {
+export function StarterBubbles({ questions, onSelect, isLoading }: StarterBubblesProps) {
+  if (isLoading) {
+    return (
+      <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full animate-pulse"
+          >
+            <span className="invisible">Loading question...</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
-      {STARTER_QUESTIONS.map((question) => (
+      {questions.map((question) => (
         <button
           key={question}
           onClick={() => onSelect(question)}
@@ -25,4 +34,3 @@ export function StarterBubbles({ onSelect }: StarterBubblesProps) {
     </div>
   )
 }
-

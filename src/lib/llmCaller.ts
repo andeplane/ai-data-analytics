@@ -1,10 +1,11 @@
 import type { MLCEngineInterface } from '@mlc-ai/web-llm'
-import type { ChatCompletionMessageParam } from '@mlc-ai/web-llm'
+import type { ChatCompletionMessageParam, ResponseFormat } from '@mlc-ai/web-llm'
 
 export interface LLMCallOptions {
   messages: ChatCompletionMessageParam[]
   temperature?: number
   max_tokens?: number
+  response_format?: ResponseFormat
   source?: string // Where the call is coming from (e.g., "chat-ui", "pandasai")
 }
 
@@ -20,6 +21,7 @@ export async function callLLM(
     messages,
     temperature = 0.7,
     max_tokens = 2000,
+    response_format,
     source = 'unknown',
   } = options
 
@@ -41,6 +43,7 @@ export async function callLLM(
     messages,
     temperature,
     max_tokens,
+    response_format,
     source,
   })
   const totalChars = messages
@@ -56,6 +59,7 @@ export async function callLLM(
       messages,
       temperature,
       max_tokens,
+      ...(response_format && { response_format }),
     })
 
     const duration = Date.now() - startTime
