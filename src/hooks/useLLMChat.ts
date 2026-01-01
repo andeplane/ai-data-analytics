@@ -302,6 +302,26 @@ export function useLLMChat({
     async (userMessage: Message, assistantId: string) => {
       if (!engine) {
         console.error('Cannot process message: web-llm engine not ready')
+        
+        // Update the loading message to show error
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  parts: [
+                    createTextPart(
+                      'Sorry, the AI engine is not available. Please refresh the page and try again.'
+                    ),
+                  ],
+                }
+              : m
+          )
+        )
+        
+        setInternalStatus('error')
+        queuedMessageRef.current = null
+        isProcessingRef.current = false
         return
       }
 
