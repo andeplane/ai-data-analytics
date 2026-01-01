@@ -1,10 +1,10 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import type { PyodideInterface } from 'pyodide'
 import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
 import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
-import { callLLM } from '../lib/llmCaller'
+import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
 
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
@@ -138,34 +138,92 @@ export function useLLMChat({
   const [input, setInput] = useState('')
 
   const { executeTool } = useToolExecutor({ pyodide })
+  
+  // Ref to track current assistant message ID for streaming updates
+  const currentAssistantIdRef = useRef<string | null>(null)
 
   /**
-   * Call the local web-llm engine with messages.
-   * Does NOT pass tools parameter - Hermes uses system prompt for tools.
+   * Build LLM call options with system prompt prepended.
    */
-  const callLLMInternal = useCallback(
-    async (conversationMessages: ChatCompletionMessageParam[]): Promise<string> => {
-      if (!engine) {
-        throw new Error('web-llm engine not ready')
-      }
-
+  const buildLLMOptions = useCallback(
+    (conversationMessages: ChatCompletionMessageParam[]): LLMCallOptions => {
       const systemPrompt = buildSystemPrompt(dataframes)
-
-      // Build the full messages array with system prompt
       const fullMessages: ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
         ...conversationMessages,
       ]
-
-      // Use unified LLM caller
-      return callLLM(engine, {
+      return {
         messages: fullMessages,
         temperature: 0.7,
         max_tokens: 2000,
         source: 'chat-ui',
-      })
+      }
     },
-    [engine, dataframes]
+    [dataframes]
+  )
+
+  /**
+   * Stream LLM response with tool call detection.
+   * If response starts with <tool_call>, accumulates silently and doesn't update UI.
+   * Otherwise, streams tokens to UI via onUpdate callback.
+   * Returns the full content and whether it's a tool call.
+   */
+  const streamLLMResponse = useCallback(
+    async (
+      conversationMessages: ChatCompletionMessageParam[],
+      onUpdate: (content: string) => void
+    ): Promise<{ content: string; isToolCall: boolean }> => {
+      if (!engine) {
+        throw new Error('web-llm engine not ready')
+      }
+
+      const options = buildLLMOptions(conversationMessages)
+      let content = ''
+      let detectedToolCall = false
+      const TOOL_CALL_PREFIX = '<tool_call>'
+
+      const generator = callLLMStreaming(engine, options)
+      
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { value: token, done } = await generator.next()
+        
+        if (done) {
+          // Generator returned final content
+          if (typeof token === 'string') {
+            content = token
+          }
+          break
+        }
+        
+        if (typeof token === 'string') {
+          content += token
+          
+          // Check for tool call prefix once we have enough characters
+          if (!detectedToolCall && content.length >= TOOL_CALL_PREFIX.length) {
+            if (content.trimStart().startsWith(TOOL_CALL_PREFIX)) {
+              detectedToolCall = true
+              console.log('🔧 Tool call detected, accumulating silently...')
+              // Don't update UI for tool calls
+            }
+          }
+          
+          // Only stream to UI if not a tool call
+          if (!detectedToolCall) {
+            onUpdate(content)
+          }
+        }
+      }
+
+      // Final check for tool calls anywhere in the content
+      const hasToolCallsInContent = hasToolCalls(content)
+      
+      return { 
+        content, 
+        isToolCall: detectedToolCall || hasToolCallsInContent 
+      }
+    },
+    [engine, buildLLMOptions]
   )
 
   /**
@@ -186,8 +244,10 @@ export function useLLMChat({
   )
 
   /**
-   * Send a message and get a response.
-   * Uses manual function calling - parses <tool_call> tags from response content.
+   * Send a message and get a streaming response.
+   * Uses streaming with tool call detection:
+   * - If response starts with <tool_call>, accumulates silently and processes tools
+   * - Otherwise, streams tokens to UI progressively
    * Compatible with @llamaindex/chat-ui ChatHandler interface.
    */
   const sendMessage = useCallback(
@@ -208,6 +268,10 @@ export function useLLMChat({
       setMessages((prev) => [...prev, userMessage])
       setStatus('submitted')
 
+      // Create assistant message placeholder for streaming
+      const assistantId = generateId()
+      currentAssistantIdRef.current = assistantId
+
       try {
         // Build conversation history for API
         const conversationHistory: ChatCompletionMessageParam[] = messages.map((m) => ({
@@ -218,15 +282,47 @@ export function useLLMChat({
         // Add the new user message
         conversationHistory.push({ role: 'user', content })
 
-        // Call LLM
-        let responseContent = await callLLMInternal(conversationHistory)
-
         // Track chart path from tool results
         let chartPath: string | undefined
+        
+        // Track if we've shown the assistant message yet
+        let assistantMessageShown = false
+
+        // Helper to update the assistant message content
+        const updateAssistantMessage = (newContent: string) => {
+          if (!assistantMessageShown) {
+            // First update - add the assistant message
+            assistantMessageShown = true
+            setStatus('streaming')
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: assistantId,
+                role: 'assistant',
+                parts: [createTextPart(newContent)],
+              },
+            ])
+          } else {
+            // Subsequent updates - update existing message
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, parts: [createTextPart(newContent)] }
+                  : m
+              )
+            )
+          }
+        }
+
+        // Stream first LLM response
+        let { content: responseContent, isToolCall } = await streamLLMResponse(
+          conversationHistory,
+          updateAssistantMessage
+        )
 
         // Handle tool calls (may need multiple rounds)
         let maxToolRounds = 5
-        while (hasToolCalls(responseContent) && maxToolRounds > 0) {
+        while (isToolCall && maxToolRounds > 0) {
           maxToolRounds--
 
           // Parse tool calls from response
@@ -273,27 +369,47 @@ export function useLLMChat({
             content: toolResponseContent,
           })
 
-          // Call LLM again with tool results
-          responseContent = await callLLMInternal(conversationHistory)
+          // Stream next LLM response (same logic - will show if not a tool call)
+          const streamResult = await streamLLMResponse(
+            conversationHistory,
+            updateAssistantMessage
+          )
+          responseContent = streamResult.content
+          isToolCall = streamResult.isToolCall
         }
 
         // Remove any remaining tool call tags from final response for display
         const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
-        // Create assistant message with chat-ui compatible parts
+        // Finalize assistant message with final content and optional chart
         const assistantParts: MessagePart[] = [createTextPart(displayContent)]
         if (chartPath) {
           assistantParts.push(createImagePart(chartPath))
         }
 
-        const assistantMessage: Message = {
-          id: generateId(),
-          role: 'assistant',
-          parts: assistantParts,
+        if (assistantMessageShown) {
+          // Update existing message with final content (including chart if any)
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, parts: assistantParts }
+                : m
+            )
+          )
+        } else {
+          // Message was never shown (all responses were tool calls?) - add it now
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: assistantId,
+              role: 'assistant',
+              parts: assistantParts,
+            },
+          ])
         }
 
-        setMessages((prev) => [...prev, assistantMessage])
         setStatus('ready')
+        currentAssistantIdRef.current = null
       } catch (err) {
         console.error('Chat error:', err)
 
@@ -307,9 +423,10 @@ export function useLLMChat({
 
         setMessages((prev) => [...prev, errorMessage])
         setStatus('error')
+        currentAssistantIdRef.current = null
       }
     },
-    [messages, callLLMInternal, processToolCalls, engine]
+    [messages, streamLLMResponse, processToolCalls, engine]
   )
 
   const stop = useCallback(async () => {

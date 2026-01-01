@@ -6,3 +6,4 @@ self.onmessage = (msg: MessageEvent) => {
   handler.onmessage(msg);
 };
 
+
