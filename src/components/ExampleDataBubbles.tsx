@@ -18,7 +18,7 @@ const EXAMPLE_FILES: ExampleFile[] = [
 ]
 
 interface ExampleDataBubblesProps {
-  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => void
+  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
 }
 
 export function ExampleDataBubbles({ onFileLoad }: ExampleDataBubblesProps) {
@@ -32,7 +32,7 @@ export function ExampleDataBubbles({ onFileLoad }: ExampleDataBubblesProps) {
         throw new Error(`Failed to fetch ${file.label}`)
       }
       const content = await response.text()
-      onFileLoad(file.name, content, 'csv')
+      await onFileLoad(file.name, content, 'csv')
     } catch (error) {
       console.error('Failed to load example file:', error)
       alert(`Failed to load example: ${error instanceof Error ? error.message : String(error)}`)
@@ -67,4 +67,3 @@ export function ExampleDataBubbles({ onFileLoad }: ExampleDataBubblesProps) {
     </div>
   )
 }
-
