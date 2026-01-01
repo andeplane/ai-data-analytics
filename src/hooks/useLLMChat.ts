@@ -282,8 +282,8 @@ export function useLLMChat({
         // Add the new user message
         conversationHistory.push({ role: 'user', content })
 
-        // Track chart path from tool results
-        let chartPath: string | undefined
+        // Track chart paths from tool results (can have multiple charts)
+        const chartPaths: string[] = []
         
         // Track if we've shown the assistant message yet
         let assistantMessageShown = false
@@ -341,10 +341,10 @@ export function useLLMChat({
             console.log(`✅ TOOL RESPONSE [${name}]:`, result)
           }
 
-          // Check for chart in tool results
+          // Collect all charts from tool results
           for (const { result } of toolResults) {
             if (result.chartPath) {
-              chartPath = result.chartPath
+              chartPaths.push(result.chartPath)
             }
           }
 
@@ -381,9 +381,9 @@ export function useLLMChat({
         // Remove any remaining tool call tags from final response for display
         const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
-        // Finalize assistant message with final content and optional chart
+        // Finalize assistant message with final content and all charts
         const assistantParts: MessagePart[] = [createTextPart(displayContent)]
-        if (chartPath) {
+        for (const chartPath of chartPaths) {
           assistantParts.push(createImagePart(chartPath))
         }
 
