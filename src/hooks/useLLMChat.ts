@@ -1,11 +1,17 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import type { PyodideInterface } from 'pyodide'
 import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
 import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
 import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
+import type { WebLLMStatus } from './useWebLLM'
+import type { PandasAIStatus } from './usePandasAI'
+import type { PyodideStatus } from './usePyodide'
 
+// Internal status includes 'awaiting-deps' for tracking queued messages
+export type InternalChatStatus = 'ready' | 'submitted' | 'streaming' | 'awaiting-deps' | 'error'
+// External status matches ChatHandler from @llamaindex/chat-ui
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
 
 interface ParsedToolCall {
@@ -13,10 +19,22 @@ interface ParsedToolCall {
   arguments: Record<string, unknown>
 }
 
+export interface SystemLoadingState {
+  webllmStatus: WebLLMStatus
+  webllmProgress: number
+  webllmProgressText: string
+  elapsedTime: number
+  estimatedTimeRemaining: number | null
+  pyodideStatus: PyodideStatus
+  pandasStatus: PandasAIStatus
+  hasQueuedFiles: boolean
+}
+
 interface UseLLMChatOptions {
   pyodide: PyodideInterface | null
   engine: MLCEngineInterface | null
   dataframes: DataFrameInfo[]
+  loadingState: SystemLoadingState
 }
 
 function generateId(): string {
@@ -119,28 +137,63 @@ function createImagePart(imageUrl: string): MessagePart {
 }
 
 /**
+ * Create a loading message part for displaying loading progress
+ */
+function createLoadingPart(loadingState: SystemLoadingState): MessagePart {
+  return {
+    type: 'loading',
+    loadingState,
+  } as MessagePart
+}
+
+/**
+ * Check if system is ready to process messages
+ */
+function isSystemReady(loadingState: SystemLoadingState): boolean {
+  return (
+    loadingState.webllmStatus === 'ready' &&
+    loadingState.pandasStatus === 'ready' &&
+    !loadingState.hasQueuedFiles
+  )
+}
+
+/**
  * Main LLM chat orchestration hook.
  * Handles conversation, tool calling, and response rendering.
  * Uses web-llm for local in-browser inference with manual function calling.
  * Returns a ChatHandler compatible interface for use with @llamaindex/chat-ui.
+ * 
+ * Supports message queueing: if the system isn't ready when a message is sent,
+ * the message is queued and a loading state is shown until dependencies are ready.
  */
 export function useLLMChat({
   pyodide,
   engine,
   dataframes,
+  loadingState,
 }: UseLLMChatOptions): ChatHandler & {
   input: string
   setInput: (input: string) => void
   isLoading: boolean
+  loadingState: SystemLoadingState
 } {
   const [messages, setMessages] = useState<Message[]>([])
-  const [status, setStatus] = useState<ChatStatus>('ready')
+  const [internalStatus, setInternalStatus] = useState<InternalChatStatus>('ready')
   const [input, setInput] = useState('')
+  
+  // Map internal status to external ChatHandler-compatible status
+  const status: ChatStatus = internalStatus === 'awaiting-deps' ? 'streaming' : internalStatus
 
   const { executeTool } = useToolExecutor({ pyodide })
   
   // Ref to track current assistant message ID for streaming updates
   const currentAssistantIdRef = useRef<string | null>(null)
+  
+  // Queue for messages waiting to be processed
+  const queuedMessageRef = useRef<{ userMessage: Message; assistantId: string } | null>(null)
+  
+  // Track if we're currently processing to avoid double-processing
+  const isProcessingRef = useRef(false)
 
   /**
    * Build LLM call options with system prompt prepended.
@@ -243,74 +296,55 @@ export function useLLMChat({
   )
 
   /**
-   * Send a message and get a streaming response.
-   * Uses streaming with tool call detection:
-   * - If response starts with <tool_call>, accumulates silently and processes tools
-   * - Otherwise, streams tokens to UI progressively
-   * Compatible with @llamaindex/chat-ui ChatHandler interface.
+   * Process a queued message (called when system becomes ready)
    */
-  const sendMessage = useCallback(
-    async (msg: Message) => {
-      const content = getTextFromParts(msg.parts)
-      if (!content.trim()) return
+  const processQueuedMessage = useCallback(
+    async (userMessage: Message, assistantId: string) => {
       if (!engine) {
-        console.error('Cannot send message: web-llm engine not ready')
+        console.error('Cannot process message: web-llm engine not ready')
         return
       }
 
-      // Add user message to UI
-      const userMessage: Message = {
-        id: msg.id || generateId(),
-        role: 'user',
-        parts: [createTextPart(content)],
-      }
-      setMessages((prev) => [...prev, userMessage])
-      setStatus('submitted')
-
-      // Create assistant message placeholder for streaming
-      const assistantId = generateId()
-      currentAssistantIdRef.current = assistantId
+      const content = getTextFromParts(userMessage.parts)
+      isProcessingRef.current = true
+      setInternalStatus('submitted')
 
       try {
-        // Build conversation history for API
-        const conversationHistory: ChatCompletionMessageParam[] = messages.map((m) => ({
-          role: m.role as 'user' | 'assistant' | 'system',
-          content: getTextFromParts(m.parts),
-        }))
+        // Build conversation history for API (excluding the loading message)
+        const conversationHistory: ChatCompletionMessageParam[] = messages
+          .filter((m) => {
+            // Skip the loading assistant message
+            if (m.id === assistantId) return false
+            // Skip messages with loading parts
+            const hasLoadingPart = m.parts.some((p) => (p as { type: string }).type === 'loading')
+            if (hasLoadingPart) return false
+            return true
+          })
+          .map((m) => ({
+            role: m.role as 'user' | 'assistant' | 'system',
+            content: getTextFromParts(m.parts),
+          }))
 
-        // Add the new user message
+        // Add the user message
         conversationHistory.push({ role: 'user', content })
 
-        // Track chart paths from tool results (can have multiple charts)
+        // Track chart paths from tool results
         const chartPaths: string[] = []
         
-        // Track if we've shown the assistant message yet
-        let assistantMessageShown = false
+        // Track if we've updated the assistant message yet
+        let assistantMessageUpdated = false
 
         // Helper to update the assistant message content
         const updateAssistantMessage = (newContent: string) => {
-          if (!assistantMessageShown) {
-            // First update - add the assistant message
-            assistantMessageShown = true
-            setStatus('streaming')
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: assistantId,
-                role: 'assistant',
-                parts: [createTextPart(newContent)],
-              },
-            ])
-          } else {
-            // Subsequent updates - update existing message
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId
-                  ? { ...m, parts: [createTextPart(newContent)] }
-                  : m
-              )
+          assistantMessageUpdated = true
+          setInternalStatus('streaming')
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, parts: [createTextPart(newContent)] }
+                : m
             )
-          }
+          )
         }
 
         // Stream first LLM response
@@ -368,9 +402,6 @@ export function useLLMChat({
           })
 
           // Build tool response in Hermes format and add to history
-          // Use 'user' role since 'tool' role requires automatic function calling mode
-          // The model identifies tool responses by the <tool_response> tags, not the role
-          // Use sanitized results to avoid sending base64 image data to the LLM
           const toolResponseContent = toolResults
             .map(({ name, result }) => 
               `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(sanitizeToolResultForLLM(result))}}\n</tool_response>`
@@ -382,7 +413,7 @@ export function useLLMChat({
             content: toolResponseContent,
           })
 
-          // Stream next LLM response (same logic - will show if not a tool call)
+          // Stream next LLM response
           const streamResult = await streamLLMResponse(
             conversationHistory,
             updateAssistantMessage
@@ -400,8 +431,8 @@ export function useLLMChat({
           assistantParts.push(createImagePart(chartPath))
         }
 
-        if (assistantMessageShown) {
-          // Update existing message with final content (including chart if any)
+        if (assistantMessageUpdated) {
+          // Update existing message with final content
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -410,7 +441,244 @@ export function useLLMChat({
             )
           )
         } else {
-          // Message was never shown (all responses were tool calls?) - add it now
+          // Message was never updated - update it now
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, parts: assistantParts }
+                : m
+            )
+          )
+        }
+
+        setInternalStatus('ready')
+        currentAssistantIdRef.current = null
+        queuedMessageRef.current = null
+        isProcessingRef.current = false
+      } catch (err) {
+        console.error('Chat error:', err)
+
+        // Update the loading message to show error
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  parts: [
+                    createTextPart(
+                      `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`
+                    ),
+                  ],
+                }
+              : m
+          )
+        )
+
+        setInternalStatus('error')
+        currentAssistantIdRef.current = null
+        queuedMessageRef.current = null
+        isProcessingRef.current = false
+      }
+    },
+    [messages, streamLLMResponse, processToolCalls, engine]
+  )
+
+  // Effect to process queued message when system becomes ready
+  useEffect(() => {
+    const queued = queuedMessageRef.current
+    if (
+      queued &&
+      isSystemReady(loadingState) &&
+      !isProcessingRef.current
+    ) {
+      processQueuedMessage(queued.userMessage, queued.assistantId)
+    }
+  }, [loadingState, processQueuedMessage])
+
+  // Effect to update loading message with current loading state
+  useEffect(() => {
+    const queued = queuedMessageRef.current
+    if (queued && !isSystemReady(loadingState) && !isProcessingRef.current) {
+      // Update the loading message with current loading state
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === queued.assistantId
+            ? { ...m, parts: [createLoadingPart(loadingState)] }
+            : m
+        )
+      )
+    }
+  }, [loadingState])
+
+  /**
+   * Send a message and get a streaming response.
+   * If system isn't ready, queues the message and shows loading state.
+   * Compatible with @llamaindex/chat-ui ChatHandler interface.
+   */
+  const sendMessage = useCallback(
+    async (msg: Message) => {
+      const content = getTextFromParts(msg.parts)
+      if (!content.trim()) return
+
+      // Add user message to UI
+      const userMessage: Message = {
+        id: msg.id || generateId(),
+        role: 'user',
+        parts: [createTextPart(content)],
+      }
+
+      // Create assistant message placeholder
+      const assistantId = generateId()
+      currentAssistantIdRef.current = assistantId
+
+      // Check if system is ready
+      if (!isSystemReady(loadingState)) {
+        // Queue the message and show loading state
+        queuedMessageRef.current = { userMessage, assistantId }
+        setInternalStatus('awaiting-deps')
+
+        // Add user message and loading assistant message
+        setMessages((prev) => [
+          ...prev,
+          userMessage,
+          {
+            id: assistantId,
+            role: 'assistant',
+            parts: [createLoadingPart(loadingState)],
+          },
+        ])
+
+        return
+      }
+
+      // System is ready, process immediately
+      setMessages((prev) => [...prev, userMessage])
+      setInternalStatus('submitted')
+
+      try {
+        // Build conversation history for API
+        const conversationHistory: ChatCompletionMessageParam[] = messages.map((m) => ({
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: getTextFromParts(m.parts),
+        }))
+
+        // Add the new user message
+        conversationHistory.push({ role: 'user', content })
+
+        // Track chart paths from tool results
+        const chartPaths: string[] = []
+        
+        // Track if we've shown the assistant message yet
+        let assistantMessageShown = false
+
+        // Helper to update the assistant message content
+        const updateAssistantMessage = (newContent: string) => {
+          if (!assistantMessageShown) {
+            assistantMessageShown = true
+            setInternalStatus('streaming')
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: assistantId,
+                role: 'assistant',
+                parts: [createTextPart(newContent)],
+              },
+            ])
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, parts: [createTextPart(newContent)] }
+                  : m
+              )
+            )
+          }
+        }
+
+        // Stream first LLM response
+        let { content: responseContent, isToolCall } = await streamLLMResponse(
+          conversationHistory,
+          updateAssistantMessage
+        )
+
+        // Handle tool calls (may need multiple rounds)
+        let maxToolRounds = 5
+        while (isToolCall && maxToolRounds > 0) {
+          maxToolRounds--
+
+          const toolCalls = parseToolCalls(responseContent)
+          if (toolCalls.length === 0) break
+
+          for (const tc of toolCalls) {
+            const questionPreview = typeof tc.arguments.question === 'string'
+              ? tc.arguments.question.substring(0, 60) + (tc.arguments.question.length > 60 ? '...' : '')
+              : 'Tool call'
+            console.log(`🔧 Tool: ${tc.name} - ${questionPreview}`)
+            console.groupCollapsed(`📋 Full Tool Arguments [${tc.name}]`)
+            console.log(tc.arguments)
+            console.groupEnd()
+          }
+
+          const toolResults = await processToolCalls(toolCalls)
+          
+          for (const { name, result } of toolResults) {
+            const resultPreview = result.chartPath 
+              ? 'Chart generated'
+              : typeof result.result === 'string'
+                ? result.result.substring(0, 60) + (result.result.length > 60 ? '...' : '')
+                : 'Tool result'
+            console.log(`✅ Tool Result [${name}]: ${resultPreview}`)
+            console.groupCollapsed(`📋 Full Tool Response [${name}]`)
+            console.log(result)
+            console.groupEnd()
+          }
+
+          for (const { result } of toolResults) {
+            if (result.chartPath) {
+              chartPaths.push(result.chartPath)
+            }
+          }
+
+          conversationHistory.push({
+            role: 'assistant',
+            content: responseContent,
+          })
+
+          const toolResponseContent = toolResults
+            .map(({ name, result }) => 
+              `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(sanitizeToolResultForLLM(result))}}\n</tool_response>`
+            )
+            .join('\n')
+          
+          conversationHistory.push({
+            role: 'user',
+            content: toolResponseContent,
+          })
+
+          const streamResult = await streamLLMResponse(
+            conversationHistory,
+            updateAssistantMessage
+          )
+          responseContent = streamResult.content
+          isToolCall = streamResult.isToolCall
+        }
+
+        const displayContent = removeToolCallsFromContent(responseContent) || responseContent
+
+        const assistantParts: MessagePart[] = [createTextPart(displayContent)]
+        for (const chartPath of chartPaths) {
+          assistantParts.push(createImagePart(chartPath))
+        }
+
+        if (assistantMessageShown) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, parts: assistantParts }
+                : m
+            )
+          )
+        } else {
           setMessages((prev) => [
             ...prev,
             {
@@ -421,7 +689,7 @@ export function useLLMChat({
           ])
         }
 
-        setStatus('ready')
+        setInternalStatus('ready')
         currentAssistantIdRef.current = null
       } catch (err) {
         console.error('Chat error:', err)
@@ -435,21 +703,20 @@ export function useLLMChat({
         }
 
         setMessages((prev) => [...prev, errorMessage])
-        setStatus('error')
+        setInternalStatus('error')
         currentAssistantIdRef.current = null
       }
     },
-    [messages, streamLLMResponse, processToolCalls, engine]
+    [messages, streamLLMResponse, processToolCalls, loadingState]
   )
 
   const stop = useCallback(async () => {
-    // For now, just reset status - actual cancellation would require AbortController
-    setStatus('ready')
+    setInternalStatus('ready')
   }, [])
 
   const isLoading = useMemo(
-    () => status === 'submitted' || status === 'streaming',
-    [status]
+    () => internalStatus === 'submitted' || internalStatus === 'streaming' || internalStatus === 'awaiting-deps',
+    [internalStatus]
   )
 
   return {
@@ -461,6 +728,7 @@ export function useLLMChat({
     input,
     setInput,
     isLoading,
+    loadingState,
   }
 }
 

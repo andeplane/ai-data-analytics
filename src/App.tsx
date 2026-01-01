@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
-import { useLLMChat, generateId } from './hooks/useLLMChat'
+import { useLLMChat, generateId, type SystemLoadingState } from './hooks/useLLMChat'
 import { useStarterQuestions } from './hooks/useStarterQuestions'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { StarterBubbles } from './components/StarterBubbles'
+import { LoadingMessage } from './components/LoadingMessage'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import {
   ChatSection,
@@ -15,7 +16,7 @@ import {
   ChatInput,
   ChatMessage,
 } from '@llamaindex/chat-ui'
-import type { ChatHandler, Message } from '@llamaindex/chat-ui'
+import type { ChatHandler, Message, MessagePart } from '@llamaindex/chat-ui'
 
 function App() {
   const { pyodide, status: pyodideStatus } = usePyodide()
@@ -33,11 +34,24 @@ function App() {
     head: df.head,
   }))
 
+  // Build loading state object for the chat hook
+  const loadingState: SystemLoadingState = useMemo(() => ({
+    webllmStatus,
+    webllmProgress,
+    webllmProgressText,
+    elapsedTime,
+    estimatedTimeRemaining,
+    pyodideStatus,
+    pandasStatus,
+    hasQueuedFiles: queuedFiles.length > 0,
+  }), [webllmStatus, webllmProgress, webllmProgressText, elapsedTime, estimatedTimeRemaining, pyodideStatus, pandasStatus, queuedFiles.length])
+
   // Chat handler using the LLM chat hook with web-llm engine
   const chat = useLLMChat({
     pyodide,
     engine,
     dataframes: dataframeInfos,
+    loadingState,
   })
 
   // Generate context-aware starter questions based on loaded dataframes
@@ -177,7 +191,41 @@ function App() {
   }
 
   const systemStatus = getSystemStatus()
-  const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready'
+  const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready' && queuedFiles.length === 0
+
+  // Helper to check if a message part is a loading part
+  const isLoadingPart = (part: MessagePart): part is MessagePart & { type: 'loading'; loadingState: SystemLoadingState } => {
+    return (part as { type: string }).type === 'loading'
+  }
+
+  // Helper to render message content (handles loading messages)
+  const renderMessageContent = (message: Message) => {
+    const loadingPart = message.parts.find(isLoadingPart)
+    
+    if (loadingPart) {
+      // Use the current loading state (most up-to-date) instead of the stored one
+      return (
+        <LoadingMessage
+          webllmStatus={loadingState.webllmStatus}
+          webllmProgress={loadingState.webllmProgress}
+          webllmProgressText={loadingState.webllmProgressText}
+          elapsedTime={loadingState.elapsedTime}
+          estimatedTimeRemaining={loadingState.estimatedTimeRemaining}
+          pyodideStatus={loadingState.pyodideStatus}
+          pandasStatus={loadingState.pandasStatus}
+          hasQueuedFiles={loadingState.hasQueuedFiles}
+        />
+      )
+    }
+
+    return (
+      <ChatMessage.Content>
+        <ChatMessage.Content.Markdown className="prose-invert" />
+        {/* Render chart images with custom component for proper sizing */}
+        <ChartImagePartUI className="mt-2" />
+      </ChatMessage.Content>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
@@ -267,11 +315,7 @@ function App() {
                   isLast={index === chatHandler.messages.length - 1}
                   className={message.role === 'user' ? 'justify-end' : 'justify-start'}
                 >
-                  <ChatMessage.Content>
-                    <ChatMessage.Content.Markdown className="prose-invert" />
-                    {/* Render chart images with custom component for proper sizing */}
-                    <ChartImagePartUI className="mt-2" />
-                  </ChatMessage.Content>
+                  {renderMessageContent(message)}
                 </ChatMessage>
               ))}
             </ChatMessages.List>
@@ -287,9 +331,7 @@ function App() {
               <div className="text-center">
                 <h2 className="text-xl font-semibold text-zinc-300 mb-2">Start a conversation</h2>
                 <p className="text-sm">
-                  {!isSystemReady
-                    ? 'Please wait for the AI model to load...'
-                    : dataframes.length === 0
+                  {dataframes.length === 0
                     ? 'Upload some data files and ask questions about them'
                     : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
                 </p>
@@ -318,16 +360,13 @@ function App() {
               <ChatInput.Field 
                 className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
                 placeholder={
-                  !isSystemReady
-                    ? 'Waiting for AI model to load...'
-                    : dataframes.length === 0
+                  dataframes.length === 0
                     ? 'Upload a file first, or just say hi!'
                     : 'Ask about your data or just chat...'
                 }
               />
               <ChatInput.Submit 
                 className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg text-sm font-medium transition-colors"
-                disabled={!isSystemReady}
               >
                 Send
               </ChatInput.Submit>
