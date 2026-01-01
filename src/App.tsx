@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
-import { useLLMChat } from './hooks/useLLMChat'
+import { useLLMChat, generateId } from './hooks/useLLMChat'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
+import { StarterBubbles } from './components/StarterBubbles'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import {
   ChatSection,
@@ -274,17 +275,31 @@ function App() {
               <span className="ml-2 text-sm">Thinking...</span>
             </ChatMessages.Loading>
             
-            <ChatMessages.Empty 
-              className="flex-1 flex items-center justify-center h-full text-zinc-500"
-              heading="Start a conversation"
-              subheading={
-                !isSystemReady
-                  ? 'Please wait for the AI model to load...'
-                  : dataframes.length === 0
-                  ? 'Upload some data files and ask questions about them'
-                  : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`
-              }
-            />
+            <ChatMessages.Empty className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-zinc-300 mb-2">Start a conversation</h2>
+                <p className="text-sm">
+                  {!isSystemReady
+                    ? 'Please wait for the AI model to load...'
+                    : dataframes.length === 0
+                    ? 'Upload some data files and ask questions about them'
+                    : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
+                </p>
+              </div>
+              
+              {/* Starter question bubbles */}
+              {isSystemReady && dataframes.length > 0 && (
+                <StarterBubbles
+                  onSelect={(question) => {
+                    chat.sendMessage({
+                      id: generateId(),
+                      role: 'user',
+                      parts: [{ type: 'text', text: question }],
+                    })
+                  }}
+                />
+              )}
+            </ChatMessages.Empty>
           </ChatMessages>
 
           {/* Input Area */}
