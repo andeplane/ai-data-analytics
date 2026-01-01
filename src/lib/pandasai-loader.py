@@ -51,15 +51,27 @@ async def patch_and_load_pandasai():
     from pyodide.ffi import to_js
 
     # DuckDB SQL syntax instructions to append to prompts
-    DUCKDB_SQL_INSTRUCTIONS = """
+    DUCKDB_SQL_INSTRUCTIONS = '''
 
 ### CRITICAL: Code Format Requirements
 You MUST wrap your Python code in markdown code blocks using triple backticks. The code extractor REQUIRES this format.
 Always start with ```python and end with ```.
 
 ### CRITICAL: Do NOT redefine functions
-The `execute_sql_query` function is ALREADY PROVIDED and working. Do NOT redefine it. Just CALL it directly like this:
-df = execute_sql_query(sql_query)
+The `execute_sql_query` function is ALREADY DEFINED in the execution environment.
+NEVER write `def execute_sql_query` - this will cause an error!
+
+WRONG (causes error):
+```python
+def execute_sql_query(sql_query: str) -> pd.DataFrame:
+    """This method connects to the database..."""
+    pass  # DO NOT WRITE THIS - FUNCTION IS ALREADY DEFINED
+```
+
+CORRECT (just call it):
+```python
+df = execute_sql_query(sql_query)  # Function is already available, just call it
+```
 
 ### CRITICAL: Always declare result variable
 You MUST end your code with a `result` variable declaration. This is MANDATORY. Without it, an error occurs.
@@ -91,7 +103,7 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 - Use standard SQL syntax compatible with DuckDB
 - For ordering: `SELECT * FROM table_name ORDER BY column_name DESC LIMIT 10`
 - Do NOT use SQL Server-specific syntax like `TOP`, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY`
-"""
+'''
 
     # Monkey-patch GeneratePythonCodeWithSQLPrompt to add DuckDB instructions
     original_to_string_sql = GeneratePythonCodeWithSQLPrompt.to_string
