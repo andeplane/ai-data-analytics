@@ -144,3 +144,19 @@
   padding: 0.2em 0.4em;
   border-radius: 0.25rem;
 }
+
+/* Fade in animation for tool call items */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}

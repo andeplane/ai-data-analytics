@@ -18,6 +18,14 @@ interface ParsedToolCall {
   arguments: Record<string, unknown>
 }
 
+export interface ToolCallProgress {
+  id: string
+  name: string
+  question?: string  // Preview from arguments
+  status: 'pending' | 'executing' | 'complete' | 'error'
+  resultPreview?: string
+}
+
 export interface SystemLoadingState {
   webllmStatus: WebLLMStatus
   webllmProgress: number
@@ -175,10 +183,12 @@ export function useLLMChat({
   setInput: (input: string) => void
   isLoading: boolean
   loadingState: SystemLoadingState
+  toolCallProgress: ToolCallProgress[]
 } {
   const [messages, setMessages] = useState<Message[]>([])
   const [internalStatus, setInternalStatus] = useState<InternalChatStatus>('ready')
   const [input, setInput] = useState('')
+  const [toolCallProgress, setToolCallProgress] = useState<ToolCallProgress[]>([])
   
   // Map internal status to external ChatHandler-compatible status
   const status: ChatStatus = internalStatus === 'awaiting-deps' ? 'streaming' : internalStatus
@@ -278,23 +288,6 @@ export function useLLMChat({
   )
 
   /**
-   * Process parsed tool calls and return results.
-   */
-  const processToolCalls = useCallback(
-    async (toolCalls: ParsedToolCall[]): Promise<Array<{ name: string; result: ToolResult }>> => {
-      const results: Array<{ name: string; result: ToolResult }> = []
-
-      for (const toolCall of toolCalls) {
-        const result: ToolResult = await executeTool(toolCall.name, toolCall.arguments)
-        results.push({ name: toolCall.name, result })
-      }
-
-      return results
-    },
-    [executeTool]
-  )
-
-  /**
    * Process a queued message (called when system becomes ready)
    */
   const processQueuedMessage = useCallback(
@@ -381,6 +374,15 @@ export function useLLMChat({
           
           if (toolCalls.length === 0) break
 
+          // Add tool calls to progress with pending status
+          const newProgress: ToolCallProgress[] = toolCalls.map((tc, idx) => ({
+            id: `${Date.now()}-${idx}`,
+            name: tc.name,
+            question: typeof tc.arguments.question === 'string' ? tc.arguments.question : undefined,
+            status: 'pending' as const,
+          }))
+          setToolCallProgress(prev => [...prev, ...newProgress])
+
           for (const tc of toolCalls) {
             const questionPreview = typeof tc.arguments.question === 'string'
               ? tc.arguments.question.substring(0, 60) + (tc.arguments.question.length > 60 ? '...' : '')
@@ -391,8 +393,35 @@ export function useLLMChat({
             console.groupEnd()
           }
 
-          // Process all tool calls
-          const toolResults = await processToolCalls(toolCalls)
+          // Process tool calls one by one with progress updates
+          const toolResults: Array<{ name: string; result: ToolResult }> = []
+          for (let i = 0; i < toolCalls.length; i++) {
+            const toolCall = toolCalls[i]
+            const progressId = newProgress[i].id
+            
+            // Mark as executing
+            setToolCallProgress(prev => 
+              prev.map(p => p.id === progressId ? { ...p, status: 'executing' as const } : p)
+            )
+            
+            const result = await executeTool(toolCall.name, toolCall.arguments)
+            toolResults.push({ name: toolCall.name, result })
+            
+            // Mark as complete with result preview
+            const resultPreview = result.chartPath 
+              ? 'Chart generated'
+              : typeof result.result === 'string'
+                ? result.result.substring(0, 100) + (result.result.length > 100 ? '...' : '')
+                : 'Tool result'
+            
+            setToolCallProgress(prev => 
+              prev.map(p => p.id === progressId ? { 
+                ...p, 
+                status: result.success ? 'complete' as const : 'error' as const,
+                resultPreview 
+              } : p)
+            )
+          }
           
           for (const { name, result } of toolResults) {
             const resultPreview = result.chartPath 
@@ -470,6 +499,7 @@ export function useLLMChat({
         }
 
         setInternalStatus('ready')
+        setToolCallProgress([]) // Clear tool progress
         currentAssistantIdRef.current = null
         isProcessingRef.current = false
       } catch (err) {
@@ -492,11 +522,12 @@ export function useLLMChat({
         )
 
         setInternalStatus('error')
+        setToolCallProgress([]) // Clear tool progress on error
         currentAssistantIdRef.current = null
         isProcessingRef.current = false
       }
     },
-    [messages, streamLLMResponse, processToolCalls, engine]
+    [messages, streamLLMResponse, executeTool, engine]
   )
 
   // Effect to process queued messages when system becomes ready (FIFO order)
@@ -628,6 +659,15 @@ export function useLLMChat({
           const toolCalls = parseToolCalls(responseContent)
           if (toolCalls.length === 0) break
 
+          // Add tool calls to progress with pending status
+          const newProgress: ToolCallProgress[] = toolCalls.map((tc, idx) => ({
+            id: `${Date.now()}-${idx}`,
+            name: tc.name,
+            question: typeof tc.arguments.question === 'string' ? tc.arguments.question : undefined,
+            status: 'pending' as const,
+          }))
+          setToolCallProgress(prev => [...prev, ...newProgress])
+
           for (const tc of toolCalls) {
             const questionPreview = typeof tc.arguments.question === 'string'
               ? tc.arguments.question.substring(0, 60) + (tc.arguments.question.length > 60 ? '...' : '')
@@ -638,7 +678,35 @@ export function useLLMChat({
             console.groupEnd()
           }
 
-          const toolResults = await processToolCalls(toolCalls)
+          // Process tool calls one by one with progress updates
+          const toolResults: Array<{ name: string; result: ToolResult }> = []
+          for (let i = 0; i < toolCalls.length; i++) {
+            const toolCall = toolCalls[i]
+            const progressId = newProgress[i].id
+            
+            // Mark as executing
+            setToolCallProgress(prev => 
+              prev.map(p => p.id === progressId ? { ...p, status: 'executing' as const } : p)
+            )
+            
+            const result = await executeTool(toolCall.name, toolCall.arguments)
+            toolResults.push({ name: toolCall.name, result })
+            
+            // Mark as complete with result preview
+            const resultPreview = result.chartPath 
+              ? 'Chart generated'
+              : typeof result.result === 'string'
+                ? result.result.substring(0, 100) + (result.result.length > 100 ? '...' : '')
+                : 'Tool result'
+            
+            setToolCallProgress(prev => 
+              prev.map(p => p.id === progressId ? { 
+                ...p, 
+                status: result.success ? 'complete' as const : 'error' as const,
+                resultPreview 
+              } : p)
+            )
+          }
           
           for (const { name, result } of toolResults) {
             const resultPreview = result.chartPath 
@@ -709,6 +777,7 @@ export function useLLMChat({
         }
 
         setInternalStatus('ready')
+        setToolCallProgress([]) // Clear tool progress
         currentAssistantIdRef.current = null
       } catch (err) {
         console.error('Chat error:', err)
@@ -723,10 +792,11 @@ export function useLLMChat({
 
         setMessages((prev) => [...prev, errorMessage])
         setInternalStatus('error')
+        setToolCallProgress([]) // Clear tool progress on error
         currentAssistantIdRef.current = null
       }
     },
-    [messages, streamLLMResponse, processToolCalls, loadingState]
+    [messages, streamLLMResponse, executeTool, loadingState]
   )
 
   const stop = useCallback(async () => {
@@ -748,6 +818,7 @@ export function useLLMChat({
     setInput,
     isLoading,
     loadingState,
+    toolCallProgress,
   }
 }
 

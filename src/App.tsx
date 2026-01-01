@@ -11,6 +11,7 @@ import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { StarterBubbles } from './components/StarterBubbles'
 import { ExampleDataBubbles } from './components/ExampleDataBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
+import { ThinkingMessage } from './components/ThinkingMessage'
 import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import {
@@ -257,11 +258,8 @@ function App() {
               ))}
             </ChatMessages.List>
             
-            <ChatMessages.Loading className="flex items-center gap-2 text-zinc-400 p-4">
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              <span className="ml-2 text-sm">Thinking...</span>
+            <ChatMessages.Loading className="p-4">
+              <ThinkingMessage toolCallProgress={chat.toolCallProgress} />
             </ChatMessages.Loading>
             
             <ChatMessages.Empty className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500">
