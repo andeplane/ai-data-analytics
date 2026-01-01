@@ -116,16 +116,18 @@ function App() {
     if (loadingPart) {
       // Use the current loading state (most up-to-date) instead of the stored one
       return (
-        <LoadingMessage
-          webllmStatus={loadingState.webllmStatus}
-          webllmProgress={loadingState.webllmProgress}
-          webllmProgressText={loadingState.webllmProgressText}
-          elapsedTime={loadingState.elapsedTime}
-          estimatedTimeRemaining={loadingState.estimatedTimeRemaining}
-          pyodideStatus={loadingState.pyodideStatus}
-          pandasStatus={loadingState.pandasStatus}
-          hasQueuedFiles={loadingState.hasQueuedFiles}
-        />
+        <ChatMessage.Content>
+          <LoadingMessage
+            webllmStatus={loadingState.webllmStatus}
+            webllmProgress={loadingState.webllmProgress}
+            webllmProgressText={loadingState.webllmProgressText}
+            elapsedTime={loadingState.elapsedTime}
+            estimatedTimeRemaining={loadingState.estimatedTimeRemaining}
+            pyodideStatus={loadingState.pyodideStatus}
+            pandasStatus={loadingState.pandasStatus}
+            hasQueuedFiles={loadingState.hasQueuedFiles}
+          />
+        </ChatMessage.Content>
       )
     }
 
