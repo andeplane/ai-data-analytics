@@ -31,13 +31,6 @@ export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn
         return
       }
 
-      // Check if web-llm is ready (webllmChat function should be exposed)
-      if (!(window as unknown as Record<string, unknown>).webllmChat) {
-        setError('web-llm not ready - please wait for model to load')
-        setStatus('error')
-        return
-      }
-
       setStatus('loading')
       setError(null)
 

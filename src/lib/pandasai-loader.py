@@ -47,9 +47,8 @@ async def patch_and_load_pandasai():
     from pandasai.core.prompts.generate_python_code_with_sql import GeneratePythonCodeWithSQLPrompt
     from pandasai.core.prompts.correct_execute_sql_query_usage_error_prompt import CorrectExecuteSQLQueryUsageErrorPrompt
 
-    # Import JavaScript interop for calling web-llm
-    from js import webllmChat
-    from pyodide.ffi import to_js
+    # Note: webllmChat is imported lazily inside WebLLM.call() to allow
+    # PandasAI to load before WebLLM engine is ready
 
     # DuckDB SQL syntax instructions to append to prompts
     DUCKDB_SQL_INSTRUCTIONS = '''
@@ -157,6 +156,9 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 
         def call(self, instruction, context=None):
             import asyncio
+            # Lazy import - allows PandasAI to load before WebLLM engine is ready
+            from js import webllmChat
+            import pyodide
             
             prompt = instruction.to_string() if hasattr(instruction, 'to_string') else str(instruction)
             
@@ -179,7 +181,6 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
             # Run the async call
             if loop.is_running():
                 # We're already in an async context, create a task
-                import pyodide
                 result = pyodide.ffi.run_sync(webllmChat(prompt))
             else:
                 result = loop.run_until_complete(call_webllm())

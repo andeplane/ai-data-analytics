@@ -62,12 +62,13 @@ function App() {
     }
   }, [webllmStatus, loadModel])
 
-  // Auto-load PandasAI when both Pyodide and web-llm are ready
+  // Auto-load PandasAI when Pyodide is ready (no need to wait for WebLLM)
+  // WebLLM is only needed when actually calling the LLM, not during setup
   useEffect(() => {
-    if (pyodideStatus === 'ready' && webllmStatus === 'ready' && pandasStatus === 'idle') {
+    if (pyodideStatus === 'ready' && pandasStatus === 'idle') {
       loadPandasAI()
     }
-  }, [pyodideStatus, webllmStatus, pandasStatus, loadPandasAI])
+  }, [pyodideStatus, pandasStatus, loadPandasAI])
 
   // Handle file upload
   const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
