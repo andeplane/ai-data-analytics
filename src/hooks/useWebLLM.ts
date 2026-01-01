@@ -189,9 +189,13 @@ export function useWebLLM(): UseWebLLMReturn {
         setEstimatedTimeRemaining(eta)
       }
 
-      const newEngine = await webllm.CreateMLCEngine(MODEL_ID, {
-        initProgressCallback,
-      })
+      // Use Web Worker to isolate WebLLM's WASM from Pyodide's WASM
+      // This prevents the "VectorInt" binding error caused by WASM memory conflicts
+      const newEngine = await webllm.CreateWebWorkerMLCEngine(
+        new Worker(new URL('../workers/webllm.worker.ts', import.meta.url), { type: 'module' }),
+        MODEL_ID,
+        { initProgressCallback }
+      )
 
       // Stop timer
       if (timerRef.current) {
