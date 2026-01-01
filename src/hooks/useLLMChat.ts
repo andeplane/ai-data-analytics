@@ -189,8 +189,8 @@ export function useLLMChat({
   // Ref to track current assistant message ID for streaming updates
   const currentAssistantIdRef = useRef<string | null>(null)
   
-  // Queue for messages waiting to be processed
-  const queuedMessageRef = useRef<{ userMessage: Message; assistantId: string } | null>(null)
+  // Queue for messages waiting to be processed (supports multiple queued messages)
+  const queuedMessagesRef = useRef<Array<{ userMessage: Message; assistantId: string }>>([])
   
   // Track if we're currently processing to avoid double-processing
   const isProcessingRef = useRef(false)
@@ -320,7 +320,6 @@ export function useLLMChat({
         )
         
         setInternalStatus('error')
-        queuedMessageRef.current = null
         isProcessingRef.current = false
         return
       }
@@ -473,7 +472,6 @@ export function useLLMChat({
 
         setInternalStatus('ready')
         currentAssistantIdRef.current = null
-        queuedMessageRef.current = null
         isProcessingRef.current = false
       } catch (err) {
         console.error('Chat error:', err)
@@ -496,33 +494,35 @@ export function useLLMChat({
 
         setInternalStatus('error')
         currentAssistantIdRef.current = null
-        queuedMessageRef.current = null
         isProcessingRef.current = false
       }
     },
     [messages, streamLLMResponse, processToolCalls, engine]
   )
 
-  // Effect to process queued message when system becomes ready
+  // Effect to process queued messages when system becomes ready (FIFO order)
   useEffect(() => {
-    const queued = queuedMessageRef.current
     if (
-      queued &&
+      queuedMessagesRef.current.length > 0 &&
       isSystemReady(loadingState) &&
       !isProcessingRef.current
     ) {
+      // Shift the first message from the queue (FIFO)
+      const queued = queuedMessagesRef.current.shift()!
       processQueuedMessage(queued.userMessage, queued.assistantId)
     }
   }, [loadingState, processQueuedMessage])
 
-  // Effect to update loading message with current loading state
+  // Effect to update loading messages with current loading state (for all queued messages)
   useEffect(() => {
-    const queued = queuedMessageRef.current
-    if (queued && !isSystemReady(loadingState) && !isProcessingRef.current) {
-      // Update the loading message with current loading state
+    if (queuedMessagesRef.current.length > 0 && !isSystemReady(loadingState) && !isProcessingRef.current) {
+      // Get all assistant IDs from the queue
+      const queuedAssistantIds = new Set(queuedMessagesRef.current.map(q => q.assistantId))
+      
+      // Update all loading messages with current loading state
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === queued.assistantId
+          queuedAssistantIds.has(m.id)
             ? { ...m, parts: [createLoadingPart(loadingState)] }
             : m
         )
@@ -554,7 +554,7 @@ export function useLLMChat({
       // Check if system is ready
       if (!isSystemReady(loadingState)) {
         // Queue the message and show loading state
-        queuedMessageRef.current = { userMessage, assistantId }
+        queuedMessagesRef.current.push({ userMessage, assistantId })
         setInternalStatus('awaiting-deps')
 
         // Add user message and loading assistant message
