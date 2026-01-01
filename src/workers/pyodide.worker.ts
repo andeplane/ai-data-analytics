@@ -98,6 +98,13 @@ async function initialize() {
     // Load essential packages (from Pyodide distribution)
     await pyodide.loadPackage(['micropip', 'pandas', 'requests', 'pillow', 'matplotlib'])
 
+    // Set matplotlib backend to 'Agg' (headless) before pyplot is imported
+    // Required for Pyodide/web worker where there's no display
+    await pyodide.runPythonAsync(`
+import matplotlib
+matplotlib.use('Agg')
+`)
+
     // Expose webllmChat to Pyodide's JavaScript globals
     // This allows Python to call it via: from js import webllmChat
     // But since we're in a worker, we need to put it on self (the worker's global)
