@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as webllm from '@mlc-ai/web-llm'
+import { callLLM } from '../lib/llmCaller'
 
 export type WebLLMStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -116,13 +117,13 @@ export function useWebLLM(): UseWebLLMReturn {
         throw new Error('web-llm engine not ready')
       }
 
-      const response = await currentEngine.chat.completions.create({
+      // Use unified LLM caller
+      return callLLM(currentEngine, {
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.0,
         max_tokens: 2000,
+        source: 'pandasai',
       })
-
-      return response.choices[0]?.message?.content || ''
     }
 
     // Expose to global scope for Pyodide

@@ -56,6 +56,9 @@ import os
 df_names = ${JSON.stringify(escapedNames)}
 question = "${escapedQuestion}"
 
+# Ensure exports/charts directory exists before PandasAI tries to save charts
+os.makedirs("exports/charts", exist_ok=True)
+
 # Validate dataframes exist
 missing = [name for name in df_names if name not in dataframes]
 if missing:

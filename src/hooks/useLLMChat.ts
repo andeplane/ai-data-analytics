@@ -3,20 +3,10 @@ import type { PyodideInterface } from 'pyodide'
 import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
+import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
+import { callLLM } from '../lib/llmCaller'
 
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
-
-export interface MessagePart {
-  type: 'text' | 'image'
-  text?: string
-  image?: string
-}
-
-export interface Message {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  parts: MessagePart[]
-}
 
 interface ParsedToolCall {
   name: string
@@ -98,15 +88,51 @@ function sanitizeToolResultForLLM(result: ToolResult): Omit<ToolResult, 'chartPa
 }
 
 /**
+ * Extract text content from a Message's parts
+ */
+function getTextFromParts(parts: MessagePart[]): string {
+  return parts
+    .filter((p): p is MessagePart & { type: 'text'; text: string } => p.type === 'text' && 'text' in p)
+    .map((p) => p.text)
+    .join('\n')
+}
+
+/**
+ * Create a text message part compatible with @llamaindex/chat-ui
+ */
+function createTextPart(text: string): MessagePart {
+  return { type: 'text', text }
+}
+
+/**
+ * Create a file/image message part compatible with @llamaindex/chat-ui
+ */
+function createImagePart(imageUrl: string): MessagePart {
+  return {
+    type: 'data-file',
+    data: {
+      url: imageUrl,
+      filename: 'chart.png',
+      mediaType: 'image/png',
+    },
+  }
+}
+
+/**
  * Main LLM chat orchestration hook.
  * Handles conversation, tool calling, and response rendering.
  * Uses web-llm for local in-browser inference with manual function calling.
+ * Returns a ChatHandler compatible interface for use with @llamaindex/chat-ui.
  */
 export function useLLMChat({
   pyodide,
   engine,
   dataframes,
-}: UseLLMChatOptions) {
+}: UseLLMChatOptions): ChatHandler & {
+  input: string
+  setInput: (input: string) => void
+  isLoading: boolean
+} {
   const [messages, setMessages] = useState<Message[]>([])
   const [status, setStatus] = useState<ChatStatus>('ready')
   const [input, setInput] = useState('')
@@ -117,7 +143,7 @@ export function useLLMChat({
    * Call the local web-llm engine with messages.
    * Does NOT pass tools parameter - Hermes uses system prompt for tools.
    */
-  const callLLM = useCallback(
+  const callLLMInternal = useCallback(
     async (conversationMessages: ChatCompletionMessageParam[]): Promise<string> => {
       if (!engine) {
         throw new Error('web-llm engine not ready')
@@ -131,18 +157,13 @@ export function useLLMChat({
         ...conversationMessages,
       ]
 
-      console.log('Sending to web-llm:', JSON.stringify(fullMessages, null, 2))
-
-      // No tools parameter - Hermes uses manual function calling via system prompt
-      const response = await engine.chat.completions.create({
+      // Use unified LLM caller
+      return callLLM(engine, {
         messages: fullMessages,
         temperature: 0.7,
         max_tokens: 2000,
+        source: 'chat-ui',
       })
-
-      console.log('web-llm response:', JSON.stringify(response, null, 2))
-
-      return response.choices[0]?.message?.content || ''
     },
     [engine, dataframes]
   )
@@ -167,9 +188,11 @@ export function useLLMChat({
   /**
    * Send a message and get a response.
    * Uses manual function calling - parses <tool_call> tags from response content.
+   * Compatible with @llamaindex/chat-ui ChatHandler interface.
    */
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (msg: Message) => {
+      const content = getTextFromParts(msg.parts)
       if (!content.trim()) return
       if (!engine) {
         console.error('Cannot send message: web-llm engine not ready')
@@ -178,29 +201,25 @@ export function useLLMChat({
 
       // Add user message to UI
       const userMessage: Message = {
-        id: generateId(),
+        id: msg.id || generateId(),
         role: 'user',
-        parts: [{ type: 'text', text: content }],
+        parts: [createTextPart(content)],
       }
       setMessages((prev) => [...prev, userMessage])
       setStatus('submitted')
-      setInput('')
 
       try {
         // Build conversation history for API
-        const conversationHistory: ChatCompletionMessageParam[] = messages.map((msg) => ({
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: msg.parts
-            .filter((p) => p.type === 'text')
-            .map((p) => p.text)
-            .join('\n'),
+        const conversationHistory: ChatCompletionMessageParam[] = messages.map((m) => ({
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: getTextFromParts(m.parts),
         }))
 
         // Add the new user message
         conversationHistory.push({ role: 'user', content })
 
         // Call LLM
-        let responseContent = await callLLM(conversationHistory)
+        let responseContent = await callLLMInternal(conversationHistory)
 
         // Track chart path from tool results
         let chartPath: string | undefined
@@ -255,22 +274,22 @@ export function useLLMChat({
           })
 
           // Call LLM again with tool results
-          responseContent = await callLLM(conversationHistory)
+          responseContent = await callLLMInternal(conversationHistory)
         }
 
         // Remove any remaining tool call tags from final response for display
         const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
-        // Create assistant message
+        // Create assistant message with chat-ui compatible parts
+        const assistantParts: MessagePart[] = [createTextPart(displayContent)]
+        if (chartPath) {
+          assistantParts.push(createImagePart(chartPath))
+        }
+
         const assistantMessage: Message = {
           id: generateId(),
           role: 'assistant',
-          parts: chartPath
-            ? [
-                { type: 'text', text: displayContent },
-                { type: 'image', image: chartPath },
-              ]
-            : [{ type: 'text', text: displayContent }],
+          parts: assistantParts,
         }
 
         setMessages((prev) => [...prev, assistantMessage])
@@ -282,10 +301,7 @@ export function useLLMChat({
           id: generateId(),
           role: 'assistant',
           parts: [
-            {
-              type: 'text',
-              text: `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`,
-            },
+            createTextPart(`Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`),
           ],
         }
 
@@ -293,10 +309,10 @@ export function useLLMChat({
         setStatus('error')
       }
     },
-    [messages, callLLM, processToolCalls, engine]
+    [messages, callLLMInternal, processToolCalls, engine]
   )
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async () => {
     // For now, just reset status - actual cancellation would require AbortController
     setStatus('ready')
   }, [])
@@ -319,3 +335,4 @@ export function useLLMChat({
 }
 
 export { generateId }
+export type { Message, MessagePart }
