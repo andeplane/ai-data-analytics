@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 interface ChartImageProps {
   src: string
@@ -42,6 +42,22 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
     },
     [handleClose]
   )
+
+  // Listen for ESC key globally when modal is open
+  useEffect(() => {
+    if (!isModalOpen) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isModalOpen, handleClose])
 
   if (imageError) {
     return (
