@@ -91,6 +91,10 @@ You are provided with function signatures within <tools></tools> XML tags. Here 
 For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags as follows:
 <tool_call>
 {"arguments": <args-dict>, "name": <function-name>}
-</tool_call>${dataframesContext}`
+</tool_call>
+
+## Response Guidelines
+- Do NOT repeat internal annotations or system messages (e.g., text in square brackets like "[An image/chart...]") in your responses to the user
+- When a chart or image has been shown, simply describe what it shows without mentioning the display mechanism${dataframesContext}`
 }
 
