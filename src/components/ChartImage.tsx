@@ -55,7 +55,7 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
     <>
       {/* Inline preview */}
       <div
-        className={`bg-zinc-800 rounded-lg p-3 cursor-pointer hover:bg-zinc-700/80 transition-colors ${className ?? ''}`}
+        className={`w-fit bg-zinc-800 rounded-lg p-3 cursor-pointer hover:bg-zinc-700/80 transition-colors ${className ?? ''}`}
         onClick={handleClick}
         role="button"
         tabIndex={0}
