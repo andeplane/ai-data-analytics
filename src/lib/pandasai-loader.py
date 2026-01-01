@@ -53,6 +53,37 @@ async def patch_and_load_pandasai():
     # DuckDB SQL syntax instructions to append to prompts
     DUCKDB_SQL_INSTRUCTIONS = """
 
+### CRITICAL: Code Format Requirements
+You MUST wrap your Python code in markdown code blocks using triple backticks. The code extractor REQUIRES this format.
+Always start with ```python and end with ```.
+
+### CRITICAL: Do NOT redefine functions
+The `execute_sql_query` function is ALREADY PROVIDED and working. Do NOT redefine it. Just CALL it directly like this:
+df = execute_sql_query(sql_query)
+
+### CRITICAL: Always declare result variable
+You MUST end your code with a `result` variable declaration. This is MANDATORY. Without it, an error occurs.
+For plots: result = {'type': 'plot', 'value': 'exports/charts/chart.png'}
+For dataframes: result = {'type': 'dataframe', 'value': df}
+For numbers: result = {'type': 'number', 'value': 42}
+For strings: result = {'type': 'string', 'value': 'The answer is...'}
+
+### COMPLETE EXAMPLE (follow this pattern):
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+sql_query = "SELECT Country, COUNT(*) as count FROM table_name GROUP BY Country LIMIT 10"
+df = execute_sql_query(sql_query)
+
+plt.figure(figsize=(8, 8))
+plt.pie(df['count'], labels=df['Country'], autopct='%1.1f%%')
+plt.title('Top 10 Countries')
+plt.savefig('exports/charts/chart.png')
+
+result = {'type': 'plot', 'value': 'exports/charts/chart.png'}
+```
+
 ### IMPORTANT: DuckDB SQL Syntax Requirements
 The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 - Use `LIMIT n` instead of `TOP n` to limit results
