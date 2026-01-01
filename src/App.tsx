@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
 import { useLLMChat, generateId, type SystemLoadingState } from './hooks/useLLMChat'
 import { useStarterQuestions } from './hooks/useStarterQuestions'
+import { useDataframes } from './hooks/useDataframes'
 import { FileUpload } from './components/FileUpload'
-import { DataFrameList, type DataFrame } from './components/DataFrameList'
+import { DataFrameList } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { StarterBubbles } from './components/StarterBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
@@ -23,8 +24,13 @@ function App() {
   const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
   const { engine, status: webllmStatus, progress: webllmProgress, progressText: webllmProgressText, elapsedTime, estimatedTimeRemaining, error: webllmError, loadModel } = useWebLLM()
   
-  const [dataframes, setDataframes] = useState<DataFrame[]>([])
-  const [queuedFiles, setQueuedFiles] = useState<Array<{ name: string; content: string; type: 'csv' | 'json' }>>([])
+  // Dataframe management
+  const { dataframes, hasQueuedFiles, handleFileLoad } = useDataframes({
+    pyodide,
+    pandasStatus,
+    loadDataframe,
+    getDataframeInfo,
+  })
 
   // Convert dataframes to DataFrameInfo for the chat hook
   const dataframeInfos: DataFrameInfo[] = dataframes.map((df) => ({
@@ -43,8 +49,8 @@ function App() {
     estimatedTimeRemaining,
     pyodideStatus,
     pandasStatus,
-    hasQueuedFiles: queuedFiles.length > 0,
-  }), [webllmStatus, webllmProgress, webllmProgressText, elapsedTime, estimatedTimeRemaining, pyodideStatus, pandasStatus, queuedFiles.length])
+    hasQueuedFiles,
+  }), [webllmStatus, webllmProgress, webllmProgressText, elapsedTime, estimatedTimeRemaining, pyodideStatus, pandasStatus, hasQueuedFiles])
 
   // Chat handler using the LLM chat hook with web-llm engine
   const chat = useLLMChat({
@@ -84,101 +90,6 @@ function App() {
     }
   }, [pyodideStatus, pandasStatus, loadPandasAI])
 
-  // Handle file upload
-  const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
-    // If PandasAI is not ready, queue the file
-    if (pandasStatus !== 'ready') {
-      setQueuedFiles(prev => [...prev, { name, content, type }])
-      // Add to dataframes list immediately (will be processed when ready)
-      setDataframes(prev => {
-        const existing = prev.findIndex(df => df.name === name)
-        if (existing >= 0) return prev
-        const newDf: DataFrame = { name, rows: 0, columns: [], head: [] }
-        return [...prev, newDf]
-      })
-      return
-    }
-
-    try {
-      // Convert JSON to CSV if needed
-      let csvContent = content
-      if (type === 'json') {
-        const json = JSON.parse(content)
-        const arr = Array.isArray(json) ? json : [json]
-        if (arr.length === 0) {
-          throw new Error('JSON array is empty')
-        }
-        const headers = Object.keys(arr[0])
-        const rows = arr.map((obj: Record<string, unknown>) => headers.map(h => String(obj[h] ?? '')).join(','))
-        csvContent = [headers.join(','), ...rows].join('\n')
-      }
-
-      await loadDataframe(name, csvContent)
-      
-      // Get dataframe info
-      const info = await getDataframeInfo(name)
-      
-      setDataframes(prev => {
-        const existing = prev.findIndex(df => df.name === name)
-        const newDf: DataFrame = { name, rows: info.rows, columns: info.columns, head: info.head }
-        if (existing >= 0) {
-          const updated = [...prev]
-          updated[existing] = newDf
-          return updated
-        }
-        return [...prev, newDf]
-      })
-    } catch (err) {
-      console.error('Failed to load file:', err)
-      alert(`Failed to load file: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }, [loadDataframe, getDataframeInfo, pandasStatus])
-
-  // Process queued files when PandasAI becomes ready
-  useEffect(() => {
-    if (pandasStatus === 'ready' && queuedFiles.length > 0 && pyodide) {
-      const processQueue = async () => {
-        const filesToProcess = [...queuedFiles]
-        setQueuedFiles([])
-        for (const file of filesToProcess) {
-          try {
-            // Convert JSON to CSV if needed
-            let csvContent = file.content
-            if (file.type === 'json') {
-              const json = JSON.parse(file.content)
-              const arr = Array.isArray(json) ? json : [json]
-              if (arr.length === 0) {
-                throw new Error('JSON array is empty')
-              }
-              const headers = Object.keys(arr[0])
-              const rows = arr.map((obj: Record<string, unknown>) => headers.map(h => String(obj[h] ?? '')).join(','))
-              csvContent = [headers.join(','), ...rows].join('\n')
-            }
-
-            await loadDataframe(file.name, csvContent)
-            
-            // Get dataframe info
-            const info = await getDataframeInfo(file.name)
-            
-            setDataframes(prev => {
-              const existing = prev.findIndex(df => df.name === file.name)
-              const newDf: DataFrame = { name: file.name, rows: info.rows, columns: info.columns, head: info.head }
-              if (existing >= 0) {
-                const updated = [...prev]
-                updated[existing] = newDf
-                return updated
-              }
-              return [...prev, newDf]
-            })
-          } catch (err) {
-            console.error('Failed to process queued file:', err)
-          }
-        }
-      }
-      processQueue()
-    }
-  }, [pandasStatus, queuedFiles, pyodide, loadDataframe, getDataframeInfo])
-
   // Compute overall system status
   const getSystemStatus = () => {
     if (webllmStatus === 'loading') return { text: 'Loading AI model...', color: 'bg-yellow-500 animate-pulse' }
@@ -191,7 +102,7 @@ function App() {
   }
 
   const systemStatus = getSystemStatus()
-  const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready' && queuedFiles.length === 0
+  const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready' && !hasQueuedFiles
 
   // Helper to check if a message part is a loading part
   const isLoadingPart = (part: MessagePart): part is MessagePart & { type: 'loading'; loadingState: SystemLoadingState } => {

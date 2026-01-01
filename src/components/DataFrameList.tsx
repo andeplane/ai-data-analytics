@@ -1,9 +1,4 @@
-interface DataFrame {
-  name: string
-  rows: number
-  columns: string[]
-  head: Record<string, unknown>[]
-}
+import type { DataFrame } from '../hooks/useDataframes'
 
 interface DataFrameListProps {
   dataframes: DataFrame[]
@@ -47,6 +42,4 @@ export function DataFrameList({ dataframes, activeDataframe, onSelect }: DataFra
     </div>
   )
 }
-
-export type { DataFrame }
 
