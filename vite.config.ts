@@ -7,4 +7,7 @@ export default defineConfig({
   base: '/ai-data-analytics/',
   plugins: [react(), tailwindcss()],
   assetsInclude: ['**/*.py'],
+  worker: {
+    format: 'es',
+  },
 })
