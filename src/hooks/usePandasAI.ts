@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import type { PyodideInterface } from 'pyodide'
+import type { PyodideProxy } from './usePyodide'
 import pandasaiLoaderCode from '../lib/pandasai-loader.py?raw'
 
 export type PandasAIStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -19,7 +19,7 @@ interface UsePandasAIReturn {
   getDataframeInfo: (name: string) => Promise<DataframeInfo>
 }
 
-export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn {
+export function usePandasAI(pyodide: PyodideProxy | null): UsePandasAIReturn {
   const [status, setStatus] = useState<PandasAIStatus>('idle')
   const [error, setError] = useState<string | null>(null)
 

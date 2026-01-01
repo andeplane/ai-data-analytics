@@ -48,7 +48,9 @@ async def patch_and_load_pandasai():
     from pandasai.core.prompts.correct_execute_sql_query_usage_error_prompt import CorrectExecuteSQLQueryUsageErrorPrompt
 
     # Note: webllmChat is imported lazily inside WebLLM.call() to allow
-    # PandasAI to load before WebLLM engine is ready
+    # PandasAI to load before WebLLM engine is ready.
+    # When running in a web worker, webllmChat is exposed on self by pyodide.worker.ts,
+    # so 'from js import webllmChat' imports it from the worker's global scope.
 
     # DuckDB SQL syntax instructions to append to prompts
     DUCKDB_SQL_INSTRUCTIONS = '''
@@ -156,7 +158,8 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 
         def call(self, instruction, context=None):
             import asyncio
-            # Lazy import - allows PandasAI to load before WebLLM engine is ready
+            # Lazy import - allows PandasAI to load before WebLLM engine is ready.
+            # In the web worker, webllmChat is exposed on self by pyodide.worker.ts.
             from js import webllmChat
             import pyodide
             
@@ -169,8 +172,8 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
                     context_str = "\n".join([f"{m['role']}: {m['content']}" for m in memory_messages])
                     prompt = f"{context_str}\n\nuser: {prompt}"
 
-            # Call the JavaScript function exposed by useWebLLM hook
-            # webllmChat is an async JS function, so we need to await the Promise
+            # Call the JavaScript function exposed by pyodide.worker.ts
+            # webllmChat returns a Promise that resolves when the main thread responds
             # All detailed logging happens in the unified llmCaller.ts interface
             loop = asyncio.get_event_loop()
             

@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import * as webllm from '@mlc-ai/web-llm'
-import { callLLM } from '../lib/llmCaller'
 
 export type WebLLMStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -107,32 +106,6 @@ export function useWebLLM(): UseWebLLMReturn {
   const startTimeRef = useRef<number | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const progressSamplesRef = useRef<ProgressSample[]>([])
-
-  // Expose global function for Python/Pyodide to call
-  useEffect(() => {
-    // This function will be called from Python via Pyodide's JS interop
-    const webllmChat = async (prompt: string): Promise<string> => {
-      const currentEngine = engineRef.current
-      if (!currentEngine) {
-        throw new Error('web-llm engine not ready')
-      }
-
-      // Use unified LLM caller
-      return callLLM(currentEngine, {
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.0,
-        max_tokens: 2000,
-        source: 'pandasai',
-      })
-    }
-
-    // Expose to global scope for Pyodide
-    ;(window as unknown as Record<string, unknown>).webllmChat = webllmChat
-
-    return () => {
-      delete (window as unknown as Record<string, unknown>).webllmChat
-    }
-  }, [])
 
   // Clean up timer on unmount
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
@@ -10,6 +10,7 @@ import { DataFrameList } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { StarterBubbles } from './components/StarterBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
+import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import {
   ChatSection,
@@ -20,9 +21,31 @@ import {
 import type { ChatHandler, Message, MessagePart } from '@llamaindex/chat-ui'
 
 function App() {
-  const { pyodide, status: pyodideStatus } = usePyodide()
-  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
   const { engine, status: webllmStatus, progress: webllmProgress, progressText: webllmProgressText, elapsedTime, estimatedTimeRemaining, error: webllmError, loadModel } = useWebLLM()
+  
+  // Keep a ref to the engine so the LLM handler can access it
+  const engineRef = useRef(engine)
+  useEffect(() => {
+    engineRef.current = engine
+  }, [engine])
+  
+  // LLM handler for Pyodide worker - called when PandasAI needs LLM inference
+  const handleLLMRequest = useCallback(async (prompt: string): Promise<string> => {
+    const currentEngine = engineRef.current
+    if (!currentEngine) {
+      throw new Error('WebLLM engine not ready')
+    }
+    
+    return callLLM(currentEngine, {
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.0,
+      max_tokens: 2000,
+      source: 'pandasai',
+    })
+  }, [])
+  
+  const { pyodide, status: pyodideStatus } = usePyodide({ onLLMRequest: handleLLMRequest })
+  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
   
   // Dataframe management
   const { dataframes, hasQueuedFiles, handleFileLoad } = useDataframes({

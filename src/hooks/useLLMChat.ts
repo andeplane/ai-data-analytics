@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
-import type { PyodideInterface } from 'pyodide'
 import type { MLCEngineInterface, ChatCompletionMessageParam } from '@mlc-ai/web-llm'
 import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
@@ -7,7 +6,7 @@ import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
 import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
 import type { WebLLMStatus } from './useWebLLM'
 import type { PandasAIStatus } from './usePandasAI'
-import type { PyodideStatus } from './usePyodide'
+import type { PyodideStatus, PyodideProxy } from './usePyodide'
 
 // Internal status includes 'awaiting-deps' for tracking queued messages
 export type InternalChatStatus = 'ready' | 'submitted' | 'streaming' | 'awaiting-deps' | 'error'
@@ -31,7 +30,7 @@ export interface SystemLoadingState {
 }
 
 interface UseLLMChatOptions {
-  pyodide: PyodideInterface | null
+  pyodide: PyodideProxy | null
   engine: MLCEngineInterface | null
   dataframes: DataFrameInfo[]
   loadingState: SystemLoadingState
