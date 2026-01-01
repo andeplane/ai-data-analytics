@@ -194,7 +194,8 @@ export function useWebLLM(): UseWebLLMReturn {
       const newEngine = await webllm.CreateWebWorkerMLCEngine(
         new Worker(new URL('../workers/webllm.worker.ts', import.meta.url), { type: 'module' }),
         MODEL_ID,
-        { initProgressCallback }
+        { initProgressCallback },
+        { context_window_size: 98304 }
       )
 
       // Stop timer
