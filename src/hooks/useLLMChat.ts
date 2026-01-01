@@ -185,10 +185,22 @@ export function useLLMChat({
   loadingState: SystemLoadingState
   toolCallProgress: ToolCallProgress[]
 } {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessagesInternal] = useState<Message[]>([])
   const [internalStatus, setInternalStatus] = useState<InternalChatStatus>('ready')
   const [input, setInput] = useState('')
   const [toolCallProgress, setToolCallProgress] = useState<ToolCallProgress[]>([])
+  
+  // Wrap setMessages to automatically clear tool progress when conversation is reset
+  const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
+    setMessagesInternal((prev) => {
+      const result = typeof newMessages === 'function' ? newMessages(prev) : newMessages
+      // If messages are being cleared, also clear tool progress
+      if (result.length === 0) {
+        setToolCallProgress([])
+      }
+      return result
+    })
+  }, [])
   
   // Map internal status to external ChatHandler-compatible status
   const status: ChatStatus = internalStatus === 'awaiting-deps' ? 'streaming' : internalStatus
