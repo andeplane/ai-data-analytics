@@ -41,7 +41,8 @@ async def patch_and_load_pandasai():
 
     # Import pandasai modules
     print("Importing pandasai modules...")
-    from pandasai import SmartDataframe, Agent
+    import pandasai
+    from pandasai import DataFrame, Agent
     from pandasai.llm import LLM
     from pandasai.core.prompts.generate_python_code_with_sql import GeneratePythonCodeWithSQLPrompt
     from pandasai.core.prompts.correct_execute_sql_query_usage_error_prompt import CorrectExecuteSQLQueryUsageErrorPrompt
@@ -189,8 +190,10 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
         def type(self) -> str:
             return "webllm"
 
-    # Create the LLM instance
+    # Create the LLM instance and configure it globally
     llm = WebLLM()
+    pandasai.config.set({"llm": llm})
+    print("Configured LLM globally via pandasai.config")
 
     # Dict to store dataframes by filename
     dataframes = {}
@@ -202,7 +205,7 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
     print("PandasAI loaded successfully with web-llm!")
 
     return {
-        "SmartDataframe": SmartDataframe,
+        "DataFrame": DataFrame,
         "Agent": Agent,
         "llm": llm,
         "dataframes": dataframes,

@@ -48,7 +48,7 @@ export function usePandasAI(pyodide: PyodideInterface | null): UsePandasAIReturn
         // Then call the patch function (no longer needs API URL or bearer token)
         await pyodide.runPythonAsync(`
 pandasai_modules = await patch_and_load_pandasai()
-SmartDataframe = pandasai_modules["SmartDataframe"]
+DataFrame = pandasai_modules["DataFrame"]
 Agent = pandasai_modules["Agent"]
 llm = pandasai_modules["llm"]
 dataframes = pandasai_modules["dataframes"]
@@ -82,8 +82,7 @@ from io import StringIO
 
 csv_data = """${escapedCsv}"""
 _temp_df = pd.read_csv(StringIO(csv_data))
-dataframes["${escapedName}"] = SmartDataframe(_temp_df, config={"llm": llm})
-dataframes["${escapedName}"]._df = _temp_df  # Store raw df for info lookup
+dataframes["${escapedName}"] = DataFrame(_temp_df)
 print(f"Loaded dataframe '${escapedName}' with {len(_temp_df)} rows")
 `)
     },
@@ -120,7 +119,7 @@ str(result)
 
       const result = await pyodide.runPythonAsync(`
 import json
-_df = dataframes["${escapedName}"]._df
+_df = dataframes["${escapedName}"]
 json.dumps({
     "rows": len(_df),
     "columns": list(_df.columns),
