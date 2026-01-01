@@ -43,10 +43,62 @@ async def patch_and_load_pandasai():
     print("Importing pandasai modules...")
     from pandasai import SmartDataframe, Agent
     from pandasai.llm import LLM
+    from pandasai.core.prompts.generate_python_code_with_sql import GeneratePythonCodeWithSQLPrompt
+    from pandasai.core.prompts.correct_execute_sql_query_usage_error_prompt import CorrectExecuteSQLQueryUsageErrorPrompt
 
     # Import JavaScript interop for calling web-llm
     from js import webllmChat
     from pyodide.ffi import to_js
+
+    # DuckDB SQL syntax instructions to append to prompts
+    DUCKDB_SQL_INSTRUCTIONS = """
+
+### IMPORTANT: DuckDB SQL Syntax Requirements
+The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
+- Use `LIMIT n` instead of `TOP n` to limit results
+- Example: `SELECT * FROM table_name LIMIT 10` (NOT `SELECT TOP 10 * FROM table_name`)
+- Use standard SQL syntax compatible with DuckDB
+- For ordering: `SELECT * FROM table_name ORDER BY column_name DESC LIMIT 10`
+- Do NOT use SQL Server-specific syntax like `TOP`, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY`
+"""
+
+    # Monkey-patch GeneratePythonCodeWithSQLPrompt to add DuckDB instructions
+    original_to_string_sql = GeneratePythonCodeWithSQLPrompt.to_string
+    
+    def patched_to_string_sql(self):
+        """Patched to_string that appends DuckDB SQL syntax instructions."""
+        # Clear cache to ensure fresh render, then call original
+        self._resolved_prompt = None
+        original_prompt = original_to_string_sql(self)
+        # Append DuckDB instructions and update cache
+        patched_prompt = original_prompt + DUCKDB_SQL_INSTRUCTIONS
+        self._resolved_prompt = patched_prompt
+        return patched_prompt
+    
+    GeneratePythonCodeWithSQLPrompt.to_string = patched_to_string_sql
+    print("Patched GeneratePythonCodeWithSQLPrompt with DuckDB SQL syntax instructions")
+
+    # Monkey-patch CorrectExecuteSQLQueryUsageErrorPrompt to add DuckDB instructions
+    original_to_string_error = CorrectExecuteSQLQueryUsageErrorPrompt.to_string
+    
+    def patched_to_string_error(self):
+        """Patched to_string that appends DuckDB SQL syntax hints for error correction."""
+        # Clear cache to ensure fresh render, then call original
+        self._resolved_prompt = None
+        original_prompt = original_to_string_error(self)
+        duckdb_error_hints = DUCKDB_SQL_INSTRUCTIONS + """
+### Common DuckDB Syntax Errors:
+- If you used `TOP`, replace it with `LIMIT` at the end of the query
+- Example fix: Change `SELECT TOP 10 * FROM table` to `SELECT * FROM table LIMIT 10`
+- Ensure all SQL syntax is compatible with DuckDB dialect
+"""
+        # Append DuckDB error hints and update cache
+        patched_prompt = original_prompt + duckdb_error_hints
+        self._resolved_prompt = patched_prompt
+        return patched_prompt
+    
+    CorrectExecuteSQLQueryUsageErrorPrompt.to_string = patched_to_string_error
+    print("Patched CorrectExecuteSQLQueryUsageErrorPrompt with DuckDB SQL syntax hints")
 
     # Custom LLM that calls web-llm via JavaScript interop
     class WebLLM(LLM):
@@ -71,10 +123,9 @@ async def patch_and_load_pandasai():
                     context_str = "\n".join([f"{m['role']}: {m['content']}" for m in memory_messages])
                     prompt = f"{context_str}\n\nuser: {prompt}"
 
-            print(f"Calling web-llm via JS interop...")
-            
             # Call the JavaScript function exposed by useWebLLM hook
             # webllmChat is an async JS function, so we need to await the Promise
+            # All detailed logging happens in the unified llmCaller.ts interface
             loop = asyncio.get_event_loop()
             
             async def call_webllm():
@@ -89,9 +140,7 @@ async def patch_and_load_pandasai():
             else:
                 result = loop.run_until_complete(call_webllm())
             
-            content = str(result)
-            print(f"web-llm response received ({len(content)} chars)")
-            return content
+            return str(result)
 
         @property
         def type(self) -> str:
@@ -102,6 +151,10 @@ async def patch_and_load_pandasai():
 
     # Dict to store dataframes by filename
     dataframes = {}
+
+    # Create exports/charts directory for PandasAI chart output
+    os.makedirs("exports/charts", exist_ok=True)
+    print("Created exports/charts directory for chart output")
 
     print("PandasAI loaded successfully with web-llm!")
 
