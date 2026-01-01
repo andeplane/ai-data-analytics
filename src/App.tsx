@@ -1,11 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
-import { useLLMChat, type Message } from './hooks/useLLMChat'
+import { useLLMChat } from './hooks/useLLMChat'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList, type DataFrame } from './components/DataFrameList'
 import type { DataFrameInfo } from './lib/systemPrompt'
+import {
+  ChatSection,
+  ChatMessages,
+  ChatInput,
+  ChatMessage,
+} from '@llamaindex/chat-ui'
+import type { ChatHandler, Message } from '@llamaindex/chat-ui'
 
 function App() {
   const { pyodide, status: pyodideStatus } = usePyodide()
@@ -29,6 +36,15 @@ function App() {
     engine,
     dataframes: dataframeInfos,
   })
+
+  // Create a ChatHandler compatible object for @llamaindex/chat-ui
+  const chatHandler: ChatHandler = useMemo(() => ({
+    messages: chat.messages,
+    status: chat.status,
+    sendMessage: chat.sendMessage,
+    stop: chat.stop,
+    setMessages: chat.setMessages,
+  }), [chat.messages, chat.status, chat.sendMessage, chat.stop, chat.setMessages])
 
   // Auto-load web-llm model on mount
   useEffect(() => {
@@ -139,12 +155,6 @@ function App() {
     }
   }, [pandasStatus, queuedFiles, pyodide, loadDataframe, getDataframeInfo])
 
-  // Send message handler
-  const handleSendMessage = useCallback(() => {
-    if (!chat.input.trim()) return
-    chat.sendMessage(chat.input)
-  }, [chat])
-
   // Compute overall system status
   const getSystemStatus = () => {
     if (webllmStatus === 'loading') return { text: 'Loading AI model...', color: 'bg-yellow-500 animate-pulse' }
@@ -226,120 +236,74 @@ function App() {
         </div>
       </aside>
 
-      {/* Main Content - Chat Area */}
+      {/* Main Content - Chat Area using @llamaindex/chat-ui */}
       <main className="flex-1 flex flex-col h-screen">
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {chat.messages.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center h-full text-zinc-500">
-              <div className="text-center">
-                <div className="text-5xl mb-4">💬</div>
-                <p className="text-lg">Start a conversation</p>
-                <p className="text-sm mt-2">
-                  {!isSystemReady
-                    ? 'Please wait for the AI model to load...'
-                    : dataframes.length === 0
-                    ? 'Upload some data files and ask questions about them'
-                    : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
-                </p>
-                {webllmStatus === 'loading' && (
-                  <p className="text-xs text-zinc-600 mt-4">
-                    First load downloads ~5GB model (cached after)
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            chat.messages.map((message: Message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))
-          )}
-          
-          {/* Loading indicator */}
-          {chat.isLoading && (
-            <div className="flex items-center gap-2 text-zinc-400">
+        <ChatSection handler={chatHandler} className="flex-1 flex flex-col">
+          {/* Chat Messages */}
+          <ChatMessages className="flex-1 overflow-y-auto p-4">
+            <ChatMessages.List className="space-y-4">
+              {chatHandler.messages.map((message: Message, index: number) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isLast={index === chatHandler.messages.length - 1}
+                  className={message.role === 'user' ? 'justify-end' : 'justify-start'}
+                >
+                  <ChatMessage.Content className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-zinc-800 text-zinc-100'
+                  }`}>
+                    <ChatMessage.Content.Markdown className="prose-invert" />
+                    <ChatMessage.Content.File className="mt-2" />
+                  </ChatMessage.Content>
+                </ChatMessage>
+              ))}
+            </ChatMessages.List>
+            
+            <ChatMessages.Loading className="flex items-center gap-2 text-zinc-400 p-4">
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               <span className="ml-2 text-sm">Thinking...</span>
-            </div>
-          )}
-        </div>
-
-        {/* Input Area */}
-        <div className="p-4 border-t border-zinc-800 bg-zinc-900">
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={chat.input}
-              onChange={(e) => chat.setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-              placeholder={
+            </ChatMessages.Loading>
+            
+            <ChatMessages.Empty 
+              className="flex-1 flex items-center justify-center h-full text-zinc-500"
+              heading="Start a conversation"
+              subheading={
                 !isSystemReady
-                  ? 'Waiting for AI model to load...'
+                  ? 'Please wait for the AI model to load...'
                   : dataframes.length === 0
-                  ? 'Upload a file first, or just say hi!'
-                  : 'Ask about your data or just chat...'
+                  ? 'Upload some data files and ask questions about them'
+                  : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`
               }
-              disabled={chat.isLoading || !isSystemReady}
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
             />
-            <button
-              onClick={handleSendMessage}
-              disabled={chat.isLoading || !chat.input.trim() || !isSystemReady}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg text-sm font-medium transition-colors"
-            >
-              {chat.isLoading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                </span>
-              ) : (
-                'Send'
-              )}
-            </button>
-          </div>
-        </div>
-      </main>
-    </div>
-  )
-}
+          </ChatMessages>
 
-/**
- * Message bubble component for rendering chat messages.
- */
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.role === 'user'
-
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-          isUser
-            ? 'bg-blue-600 text-white'
-            : 'bg-zinc-800 text-zinc-100'
-        }`}
-      >
-        {message.parts.map((part, idx) => {
-          if (part.type === 'text' && part.text) {
-            return (
-              <p key={idx} className="whitespace-pre-wrap">
-                {part.text}
-              </p>
-            )
-          }
-          if (part.type === 'image' && part.image) {
-            return (
-              <img
-                key={idx}
-                src={part.image}
-                alt="Chart"
-                className="mt-2 max-w-full rounded-lg"
+          {/* Input Area */}
+          <ChatInput className="p-4 border-t border-zinc-800 bg-zinc-900">
+            <ChatInput.Form className="flex gap-3">
+              <ChatInput.Field 
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                placeholder={
+                  !isSystemReady
+                    ? 'Waiting for AI model to load...'
+                    : dataframes.length === 0
+                    ? 'Upload a file first, or just say hi!'
+                    : 'Ask about your data or just chat...'
+                }
               />
-            )
-          }
-          return null
-        })}
-      </div>
+              <ChatInput.Submit 
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-6 py-3 rounded-lg text-sm font-medium transition-colors"
+                disabled={!isSystemReady}
+              >
+                Send
+              </ChatInput.Submit>
+            </ChatInput.Form>
+          </ChatInput>
+        </ChatSection>
+      </main>
     </div>
   )
 }

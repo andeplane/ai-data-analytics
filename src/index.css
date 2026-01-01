@@ -1,1 +1,111 @@
 @import "tailwindcss";
+@source '../node_modules/@llamaindex/chat-ui/**/*.{ts,tsx}';
+@import '@llamaindex/chat-ui/styles/markdown.css';
+
+/* Shadcn CSS variables for @llamaindex/chat-ui dark theme compatibility */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 5.9% 90%;
+  --input: 240 5.9% 90%;
+  --ring: 217.2 91.2% 59.8%;
+  --radius: 0.5rem;
+}
+
+.dark, :root {
+  /* Dark theme (zinc-950 based) - default for this app */
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 3.7% 15.9%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --accent: 240 3.7% 15.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --ring: 217.2 91.2% 59.8%;
+}
+
+/* Custom prose styles for markdown in dark mode */
+.prose-invert {
+  --tw-prose-body: theme('colors.zinc.100');
+  --tw-prose-headings: theme('colors.zinc.100');
+  --tw-prose-links: theme('colors.blue.400');
+  --tw-prose-bold: theme('colors.zinc.100');
+  --tw-prose-counters: theme('colors.zinc.400');
+  --tw-prose-bullets: theme('colors.zinc.400');
+  --tw-prose-hr: theme('colors.zinc.700');
+  --tw-prose-quotes: theme('colors.zinc.100');
+  --tw-prose-quote-borders: theme('colors.zinc.700');
+  --tw-prose-captions: theme('colors.zinc.400');
+  --tw-prose-code: theme('colors.zinc.100');
+  --tw-prose-pre-code: theme('colors.zinc.100');
+  --tw-prose-pre-bg: theme('colors.zinc.900');
+  --tw-prose-th-borders: theme('colors.zinc.700');
+  --tw-prose-td-borders: theme('colors.zinc.800');
+}
+
+/* Markdown table styling for dark theme */
+.custom-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+.custom-markdown th,
+.custom-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.custom-markdown th {
+  background-color: hsl(var(--secondary));
+  font-weight: 600;
+}
+
+.custom-markdown tr:nth-child(even) {
+  background-color: hsl(var(--secondary) / 0.5);
+}
+
+/* Code block styling */
+.custom-markdown pre {
+  background-color: hsl(var(--secondary));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.custom-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+}
+
+.custom-markdown :not(pre) > code {
+  background-color: hsl(var(--secondary));
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+}
