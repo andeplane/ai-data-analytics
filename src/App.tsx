@@ -9,6 +9,7 @@ import { FileUpload } from './components/FileUpload'
 import { DataFrameList } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { StarterBubbles } from './components/StarterBubbles'
+import { ExampleDataBubbles } from './components/ExampleDataBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
 import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
@@ -266,12 +267,19 @@ function App() {
             <ChatMessages.Empty className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500">
               <div className="text-center">
                 <h2 className="text-xl font-semibold text-zinc-300 mb-2">Start a conversation</h2>
-                <p className="text-sm">
-                  {dataframes.length === 0
-                    ? 'Upload some data files and ask questions about them'
-                    : `You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
-                </p>
+                {dataframes.length > 0 && (
+                  <p className="text-sm">
+                    {`You have ${dataframes.length} dataframe${dataframes.length > 1 ? 's' : ''} loaded. Ask me anything!`}
+                  </p>
+                )}
               </div>
+              
+              {/* Example data bubbles when no dataframes loaded */}
+              {dataframes.length === 0 && (
+                <div className="mt-4">
+                  <ExampleDataBubbles onFileLoad={handleFileLoad} />
+                </div>
+              )}
               
               {/* Starter question bubbles */}
               {isSystemReady && dataframes.length > 0 && (
