@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import type { PyodideInterface } from 'pyodide'
-import type { AnalyzeDataArgs, AddNumbersArgs } from '../lib/tools'
-import { isAnalyzeDataArgs, isAddNumbersArgs } from '../lib/tools'
+import type { AnalyzeDataArgs } from '../lib/tools'
+import { isAnalyzeDataArgs } from '../lib/tools'
 
 export interface ToolResult {
   success: boolean
@@ -143,22 +143,6 @@ result_json
   )
 
   /**
-   * Execute the add_numbers tool - simple test tool.
-   */
-  const executeAddNumbers = useCallback(
-    async (args: AddNumbersArgs): Promise<ToolResult> => {
-      const { a, b } = args
-      const sum = a + b
-      console.log(`add_numbers called: ${a} + ${b} = ${sum}`)
-      return {
-        success: true,
-        result: `The sum of ${a} and ${b} is ${sum}`,
-      }
-    },
-    []
-  )
-
-  /**
    * Execute a tool by name with given arguments.
    */
   const executeTool = useCallback(
@@ -166,15 +150,6 @@ result_json
       console.log(`Executing tool: ${toolName}`, args)
       
       switch (toolName) {
-        case 'add_numbers':
-          if (!isAddNumbersArgs(args)) {
-            return {
-              success: false,
-              result: 'Invalid arguments for add_numbers tool. Expected {a: number, b: number}',
-            }
-          }
-          return executeAddNumbers(args)
-
         case 'analyze_data':
           if (!isAnalyzeDataArgs(args)) {
             return {
@@ -191,13 +166,12 @@ result_json
           }
       }
     },
-    [executeAddNumbers, executeAnalyzeData]
+    [executeAnalyzeData]
   )
 
   return {
     executeTool,
     executeAnalyzeData,
-    executeAddNumbers,
   }
 }
 

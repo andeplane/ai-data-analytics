@@ -25,36 +25,10 @@ export interface AnalyzeDataArgs {
   question: string
 }
 
-export interface AddNumbersArgs {
-  a: number
-  b: number
-}
-
 /**
  * Tool definitions that will be sent to the LLM.
  */
 export const tools: ToolDefinition[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'add_numbers',
-      description: 'Add two numbers together and return the result. Use this when the user asks to add, sum, or calculate the total of two numbers.',
-      parameters: {
-        type: 'object',
-        properties: {
-          a: {
-            type: 'number',
-            description: 'The first number to add',
-          },
-          b: {
-            type: 'number',
-            description: 'The second number to add',
-          },
-        },
-        required: ['a', 'b'],
-      },
-    },
-  },
   {
     type: 'function',
     function: {
@@ -90,14 +64,5 @@ export function isAnalyzeDataArgs(args: unknown): args is AnalyzeDataArgs {
     obj.dataframe_names.every((name) => typeof name === 'string') &&
     typeof obj.question === 'string'
   )
-}
-
-/**
- * Type guard to check if args match AddNumbersArgs
- */
-export function isAddNumbersArgs(args: unknown): args is AddNumbersArgs {
-  if (typeof args !== 'object' || args === null) return false
-  const obj = args as Record<string, unknown>
-  return typeof obj.a === 'number' && typeof obj.b === 'number'
 }
 
