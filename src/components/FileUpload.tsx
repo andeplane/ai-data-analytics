@@ -15,7 +15,10 @@ export function FileUpload({ onFileLoad, disabled }: FileUploadProps) {
         const content = e.target?.result as string
         const ext = file.name.split('.').pop()?.toLowerCase()
         const type = ext === 'json' ? 'json' : 'csv'
-        const name = file.name.replace(/\.[^/.]+$/, '') // Remove extension
+        let name = file.name.replace(/\.[^/.]+$/, '') // Remove extension
+        // Sanitize name: replace any non-alphanumeric characters with underscores
+        // This ensures safe SQL identifiers (e.g., "customers-10000" -> "customers_10000")
+        name = name.replace(/[^a-zA-Z0-9]/g, '_')
         onFileLoad(name, content, type)
       }
       reader.readAsText(file)
