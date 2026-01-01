@@ -249,11 +249,7 @@ function App() {
                   isLast={index === chatHandler.messages.length - 1}
                   className={message.role === 'user' ? 'justify-end' : 'justify-start'}
                 >
-                  <ChatMessage.Content className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-zinc-800 text-zinc-100'
-                  }`}>
+                  <ChatMessage.Content>
                     <ChatMessage.Content.Markdown className="prose-invert" />
                     <ChatMessage.Content.File className="mt-2" />
                   </ChatMessage.Content>
