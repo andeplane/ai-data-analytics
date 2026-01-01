@@ -184,7 +184,6 @@ export function useLLMChat({
 
       const generator = callLLMStreaming(engine, options)
       
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { value: token, done } = await generator.next()
         
@@ -331,14 +330,28 @@ export function useLLMChat({
           if (toolCalls.length === 0) break
 
           for (const tc of toolCalls) {
-            console.log(`🔧 CALLING TOOL: ${tc.name}`, tc.arguments)
+            const questionPreview = typeof tc.arguments.question === 'string'
+              ? tc.arguments.question.substring(0, 60) + (tc.arguments.question.length > 60 ? '...' : '')
+              : 'Tool call'
+            console.log(`🔧 Tool: ${tc.name} - ${questionPreview}`)
+            console.groupCollapsed(`📋 Full Tool Arguments [${tc.name}]`)
+            console.log(tc.arguments)
+            console.groupEnd()
           }
 
           // Process all tool calls
           const toolResults = await processToolCalls(toolCalls)
           
           for (const { name, result } of toolResults) {
-            console.log(`✅ TOOL RESPONSE [${name}]:`, result)
+            const resultPreview = result.chartPath 
+              ? 'Chart generated'
+              : typeof result.result === 'string'
+                ? result.result.substring(0, 60) + (result.result.length > 60 ? '...' : '')
+                : 'Tool result'
+            console.log(`✅ Tool Result [${name}]: ${resultPreview}`)
+            console.groupCollapsed(`📋 Full Tool Response [${name}]`)
+            console.log(result)
+            console.groupEnd()
           }
 
           // Collect all charts from tool results

@@ -23,26 +23,31 @@ export async function callLLM(
     source = 'unknown',
   } = options
 
-  // LOG EVERY SINGLE LLM CALL
-  console.log('='.repeat(80))
-  console.log(`🔥 LLM CALL [${source.toUpperCase()}]`)
-  console.log('='.repeat(80))
-  console.log('📤 REQUEST:')
-  console.log(JSON.stringify({
+  // Extract last user message for summary
+  const lastUserMessage = messages
+    .slice()
+    .reverse()
+    .find(msg => msg.role === 'user')
+  const userMessagePreview = lastUserMessage && typeof lastUserMessage.content === 'string'
+    ? lastUserMessage.content.substring(0, 80) + (lastUserMessage.content.length > 80 ? '...' : '')
+    : `[${source.toUpperCase()}] LLM Call`
+
+  // LOG SUMMARY
+  console.log(`📤 User: ${userMessagePreview}`)
+  
+  // Collapsible details
+  console.groupCollapsed(`📋 Full LLM Request Details [${source.toUpperCase()}]`)
+  console.log('Request:', {
     messages,
     temperature,
     max_tokens,
     source,
-  }, null, 2))
-  console.log('📤 MESSAGES BREAKDOWN:')
-  messages.forEach((msg, idx) => {
-    console.log(`  [${idx}] ${msg.role}: ${typeof msg.content === 'string' ? msg.content.substring(0, 200) : '[object]'}${typeof msg.content === 'string' && msg.content.length > 200 ? '...' : ''}`)
   })
   const totalChars = messages
     .map(m => typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length)
     .reduce((a, b) => a + b, 0)
-  console.log(`📏 Total prompt length: ${totalChars} characters`)
-  console.log('-'.repeat(80))
+  console.log(`Total prompt length: ${totalChars} characters`)
+  console.groupEnd()
 
   const startTime = Date.now()
 
@@ -56,30 +61,29 @@ export async function callLLM(
     const duration = Date.now() - startTime
     const content = response.choices[0]?.message?.content || ''
 
-    // LOG RESPONSE
-    console.log('='.repeat(80))
-    console.log(`✅ LLM RESPONSE [${source.toUpperCase()}]`)
-    console.log('='.repeat(80))
-    console.log('📥 FULL RESPONSE OBJECT:')
-    console.log(JSON.stringify(response, null, 2))
-    console.log('📥 RESPONSE CONTENT:')
-    console.log(content)
-    console.log(`📏 Response length: ${content.length} characters`)
-    console.log(`⏱️ Duration: ${duration}ms`)
+    // LOG SUMMARY
+    const contentPreview = content.substring(0, 100) + (content.length > 100 ? '...' : '')
+    console.log(`📥 Response: ${contentPreview}`)
+    
+    // Collapsible details
+    console.groupCollapsed(`📋 Full LLM Response Details [${source.toUpperCase()}]`)
+    console.log('Full response object:', response)
+    console.log('Full content:', content)
+    console.log(`Response length: ${content.length} characters`)
+    console.log(`Duration: ${duration}ms`)
     if (response.usage) {
-      console.log(`📊 Tokens: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total`)
+      console.log(`Tokens: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total`)
     }
-    console.log('='.repeat(80))
+    console.groupEnd()
 
     return content
   } catch (error) {
     const duration = Date.now() - startTime
-    console.error('='.repeat(80))
-    console.error(`❌ LLM ERROR [${source.toUpperCase()}]`)
-    console.error('='.repeat(80))
+    console.error(`❌ LLM Error [${source.toUpperCase()}]:`, error instanceof Error ? error.message : String(error))
+    console.groupCollapsed(`📋 Full Error Details [${source.toUpperCase()}]`)
     console.error('Error:', error)
-    console.error(`⏱️ Duration before error: ${duration}ms`)
-    console.error('='.repeat(80))
+    console.error(`Duration before error: ${duration}ms`)
+    console.groupEnd()
     throw error
   }
 }
@@ -100,27 +104,32 @@ export async function* callLLMStreaming(
     source = 'unknown',
   } = options
 
-  // LOG STREAMING CALL START
-  console.log('='.repeat(80))
-  console.log(`🔥 LLM STREAMING CALL [${source.toUpperCase()}]`)
-  console.log('='.repeat(80))
-  console.log('📤 REQUEST:')
-  console.log(JSON.stringify({
+  // Extract last user message for summary
+  const lastUserMessage = messages
+    .slice()
+    .reverse()
+    .find(msg => msg.role === 'user')
+  const userMessagePreview = lastUserMessage && typeof lastUserMessage.content === 'string'
+    ? lastUserMessage.content.substring(0, 80) + (lastUserMessage.content.length > 80 ? '...' : '')
+    : `[${source.toUpperCase()}] LLM Streaming Call`
+
+  // LOG SUMMARY
+  console.log(`📤 User: ${userMessagePreview}`)
+  
+  // Collapsible details
+  console.groupCollapsed(`📋 Full LLM Streaming Request Details [${source.toUpperCase()}]`)
+  console.log('Request:', {
     messages,
     temperature,
     max_tokens,
     source,
     stream: true,
-  }, null, 2))
-  console.log('📤 MESSAGES BREAKDOWN:')
-  messages.forEach((msg, idx) => {
-    console.log(`  [${idx}] ${msg.role}: ${typeof msg.content === 'string' ? msg.content.substring(0, 200) : '[object]'}${typeof msg.content === 'string' && msg.content.length > 200 ? '...' : ''}`)
   })
   const totalChars = messages
     .map(m => typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length)
     .reduce((a, b) => a + b, 0)
-  console.log(`📏 Total prompt length: ${totalChars} characters`)
-  console.log('-'.repeat(80))
+  console.log(`Total prompt length: ${totalChars} characters`)
+  console.groupEnd()
 
   const startTime = Date.now()
 
@@ -144,25 +153,25 @@ export async function* callLLMStreaming(
 
     const duration = Date.now() - startTime
 
-    // LOG STREAMING COMPLETE
-    console.log('='.repeat(80))
-    console.log(`✅ LLM STREAMING COMPLETE [${source.toUpperCase()}]`)
-    console.log('='.repeat(80))
-    console.log('📥 FULL RESPONSE CONTENT:')
-    console.log(content)
-    console.log(`📏 Response length: ${content.length} characters`)
-    console.log(`⏱️ Duration: ${duration}ms`)
-    console.log('='.repeat(80))
+    // LOG SUMMARY
+    const contentPreview = content.substring(0, 100) + (content.length > 100 ? '...' : '')
+    console.log(`📥 Response: ${contentPreview}`)
+    
+    // Collapsible details
+    console.groupCollapsed(`📋 Full LLM Streaming Response Details [${source.toUpperCase()}]`)
+    console.log('Full content:', content)
+    console.log(`Response length: ${content.length} characters`)
+    console.log(`Duration: ${duration}ms`)
+    console.groupEnd()
 
     return content
   } catch (error) {
     const duration = Date.now() - startTime
-    console.error('='.repeat(80))
-    console.error(`❌ LLM STREAMING ERROR [${source.toUpperCase()}]`)
-    console.error('='.repeat(80))
+    console.error(`❌ LLM Streaming Error [${source.toUpperCase()}]:`, error instanceof Error ? error.message : String(error))
+    console.groupCollapsed(`📋 Full Error Details [${source.toUpperCase()}]`)
     console.error('Error:', error)
-    console.error(`⏱️ Duration before error: ${duration}ms`)
-    console.error('='.repeat(80))
+    console.error(`Duration before error: ${duration}ms`)
+    console.groupEnd()
     throw error
   }
 }

@@ -147,7 +147,10 @@ result_json
    */
   const executeTool = useCallback(
     async (toolName: string, args: unknown): Promise<ToolResult> => {
-      console.log(`Executing tool: ${toolName}`, args)
+      // Tool execution is logged in useLLMChat.ts, so we keep this minimal
+      console.groupCollapsed(`🔧 Executing tool: ${toolName}`)
+      console.log('Arguments:', args)
+      console.groupEnd()
       
       switch (toolName) {
         case 'analyze_data':
