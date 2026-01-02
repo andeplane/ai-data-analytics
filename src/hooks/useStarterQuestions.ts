@@ -15,7 +15,7 @@ const DEFAULT_QUESTIONS = [
  * Build a prompt for generating starter questions based on dataframe info.
  * Uses the same format as the system prompt for consistency.
  */
-function buildQuestionGenerationPrompt(dataframes: DataFrameInfo[]): string {
+export function buildQuestionGenerationPrompt(dataframes: DataFrameInfo[]): string {
   const dataframesList = dataframes
     .map((df) => {
       const header = `### ${df.name}\n- Rows: ${df.rows.toLocaleString()}\n- Columns: ${df.columns.join(', ')}`
@@ -60,7 +60,7 @@ Example: {"questions": ["What is the correlation between price and sales?", "Plo
  * Parse the LLM response to extract questions array.
  * With JSON mode, the response should be a valid JSON object.
  */
-function parseQuestionsResponse(response: string): string[] {
+export function parseQuestionsResponse(response: string): string[] {
   try {
     const parsed = JSON.parse(response.trim())
     
@@ -81,7 +81,7 @@ function parseQuestionsResponse(response: string): string[] {
  * Create a stable hash of dataframes for comparison.
  * Used to detect when dataframes have actually changed.
  */
-function hashDataframes(dataframes: DataFrameInfo[]): string {
+export function hashDataframes(dataframes: DataFrameInfo[]): string {
   return dataframes
     .map(df => `${df.name}:${df.rows}:${df.columns.join(',')}`)
     .sort()

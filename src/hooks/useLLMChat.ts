@@ -7,16 +7,18 @@ import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
 import type { WebLLMStatus } from './useWebLLM'
 import type { PandasAIStatus } from './usePandasAI'
 import type { PyodideStatus, PyodideProxy } from './usePyodide'
+import {
+  parseToolCalls,
+  hasToolCalls,
+  removeToolCallsFromContent,
+  sanitizeToolResultForLLM,
+  getTextFromParts,
+} from '../lib/chatUtils'
 
 // Internal status includes 'awaiting-deps' for tracking queued messages
 export type InternalChatStatus = 'ready' | 'submitted' | 'streaming' | 'awaiting-deps' | 'error'
 // External status matches ChatHandler from @llamaindex/chat-ui
 export type ChatStatus = 'ready' | 'submitted' | 'streaming' | 'error'
-
-interface ParsedToolCall {
-  name: string
-  arguments: Record<string, unknown>
-}
 
 export interface ToolCallProgress {
   id: string
@@ -49,80 +51,6 @@ interface UseLLMChatOptions {
 
 function generateId(): string {
   return Math.random().toString(36).substring(2, 9)
-}
-
-/**
- * Parse <tool_call> XML tags from the model's response content.
- * Hermes models output tool calls in this format:
- * <tool_call>
- * {"arguments": {...}, "name": "function_name"}
- * </tool_call>
- */
-function parseToolCalls(content: string): ParsedToolCall[] {
-  const toolCalls: ParsedToolCall[] = []
-  
-  // Match <tool_call>...</tool_call> blocks
-  const regex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
-  let match
-  
-  while ((match = regex.exec(content)) !== null) {
-    try {
-      const jsonStr = match[1].trim()
-      const parsed = JSON.parse(jsonStr)
-      
-      // Handle both formats: {"arguments": {...}, "name": "..."} and {"name": "...", "arguments": {...}}
-      if (parsed.name && parsed.arguments) {
-        toolCalls.push({
-          name: parsed.name,
-          arguments: parsed.arguments,
-        })
-      }
-    } catch (e) {
-      console.warn('Failed to parse tool call JSON:', match[1], e)
-    }
-  }
-  
-  return toolCalls
-}
-
-/**
- * Check if content contains tool calls
- */
-function hasToolCalls(content: string): boolean {
-  return content.includes('<tool_call>') && content.includes('</tool_call>')
-}
-
-/**
- * Remove tool call XML tags from content for display
- */
-function removeToolCallsFromContent(content: string): string {
-  return content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim()
-}
-
-/**
- * Sanitize tool result for LLM consumption.
- * Removes chartPath (base64 image data) to avoid polluting the context window.
- * If an image was generated, adds a text message to inform the LLM.
- */
-function sanitizeToolResultForLLM(result: ToolResult): Omit<ToolResult, 'chartPath'> {
-  const { chartPath, ...sanitized } = result
-  
-  if (chartPath) {
-    // Append message to inform the LLM that an image was shown to the user
-    sanitized.result = `${sanitized.result}\n\n[An image/chart with the result has been displayed to the user.]`
-  }
-  
-  return sanitized
-}
-
-/**
- * Extract text content from a Message's parts
- */
-function getTextFromParts(parts: MessagePart[]): string {
-  return parts
-    .filter((p): p is MessagePart & { type: 'text'; text: string } => p.type === 'text' && 'text' in p)
-    .map((p) => p.text)
-    .join('\n')
 }
 
 /**

@@ -32,7 +32,7 @@ interface UseDataframesResult {
 /**
  * Convert JSON content to CSV format
  */
-function jsonToCsv(content: string): string {
+export function jsonToCsv(content: string): string {
   const json = JSON.parse(content)
   const arr = Array.isArray(json) ? json : [json]
   if (arr.length === 0) {

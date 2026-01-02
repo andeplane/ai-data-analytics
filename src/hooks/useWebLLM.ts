@@ -20,7 +20,7 @@ const MODEL_ID = 'Hermes-3-Llama-3.1-8B-q4f16_1-MLC'
 // How many seconds of progress history to keep for ETA calculation
 const ETA_WINDOW_SECONDS = 10
 
-interface ProgressSample {
+export interface ProgressSample {
   timestamp: number
   progress: number
 }
@@ -44,7 +44,7 @@ export function formatTime(seconds: number): string {
  * Calculate ETA based on recent progress rate (rolling window).
  * This handles the case where cached files load instantly.
  */
-function calculateETA(samples: ProgressSample[], currentProgress: number): number | null {
+export function calculateETA(samples: ProgressSample[], currentProgress: number): number | null {
   if (samples.length < 2 || currentProgress >= 1) {
     return null
   }
