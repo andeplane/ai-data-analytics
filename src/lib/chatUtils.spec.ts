@@ -391,6 +391,30 @@ describe(createToolCallPart.name, () => {
     expect(part.data.result).toBe(result)
     expect(part.data.language).toBe('python')
   })
+
+  it('should include chartPath when provided', () => {
+    const chartPath = 'exports/charts/temp_chart.png'
+    const part = createToolCallPart('Analyze data', 'Question', undefined, 'python', undefined, chartPath) as {
+      type: string
+      data: { chartPath: string }
+    }
+
+    expect(part.data.chartPath).toBe(chartPath)
+  })
+
+  it('should handle chartPath with all other parameters', () => {
+    const code = 'plt.plot([1, 2, 3])'
+    const result = 'Chart generated'
+    const chartPath = 'exports/charts/temp_chart.png'
+    const part = createToolCallPart('Analyze data', 'Question', code, 'python', result, chartPath) as {
+      type: string
+      data: { code: string; result: string; chartPath: string }
+    }
+
+    expect(part.data.code).toBe(code)
+    expect(part.data.result).toBe(result)
+    expect(part.data.chartPath).toBe(chartPath)
+  })
 })
 
 describe(isSystemReady.name, () => {

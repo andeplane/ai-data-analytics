@@ -16,8 +16,11 @@ vi.mock('@llamaindex/chat-ui', () => ({
 }))
 
 import { ToolCallCollapsible } from './ToolCallCollapsible'
+import { UseChartImageViewModelContext, type UseChartImageViewModelContextType } from '../hooks/useChartImageViewModel'
 
 describe(ToolCallCollapsible.name, () => {
+  let mockChartImageContext: UseChartImageViewModelContextType
+
   beforeEach(() => {
     // Mock clipboard API
     Object.assign(navigator, {
@@ -25,6 +28,13 @@ describe(ToolCallCollapsible.name, () => {
         writeText: vi.fn().mockResolvedValue(undefined),
       },
     })
+
+    // Mock context for ChartImage (via dependency injection, not vi.mock)
+    mockChartImageContext = {
+      downloadFile: vi.fn(),
+      addKeydownListener: vi.fn(() => vi.fn()),
+    }
+
     vi.clearAllMocks()
   })
 
@@ -34,7 +44,11 @@ describe(ToolCallCollapsible.name, () => {
 
   const renderWithPart = (part: MessagePart | null) => {
     mockUsePart.mockReturnValue(part)
-    return render(<ToolCallCollapsible />)
+    return render(
+      <UseChartImageViewModelContext.Provider value={mockChartImageContext}>
+        <ToolCallCollapsible />
+      </UseChartImageViewModelContext.Provider>
+    )
   }
 
   it('should return null when part is not a tool-call part', () => {
@@ -382,6 +396,90 @@ describe(ToolCallCollapsible.name, () => {
 
     expect(container.textContent).toContain('print')
     expect(container.textContent).toContain('Hello')
+  })
+
+  it('should display chart image when chartPath is provided', () => {
+    const toolCallPart: MessagePart = {
+      type: 'tool-call',
+      data: {
+        toolName: 'Analyze data',
+        input: 'Question',
+        chartPath: 'exports/charts/temp_chart.png',
+      },
+    } as MessagePart
+
+    renderWithPart(toolCallPart)
+
+    const header = screen.getByRole('button', { name: /expand analyze data/i })
+    act(() => {
+      header.click()
+    })
+
+    // ChartImage renders an img with alt and "Click to view full size" text
+    const img = screen.getByAltText('Generated chart')
+    expect(img).toBeTruthy()
+    expect(img.getAttribute('src')).toContain('temp_chart.png')
+    expect(screen.getByText('Click to view full size')).toBeTruthy()
+  })
+
+  it('should show "Show details" when chartPath is present', () => {
+    const toolCallPart: MessagePart = {
+      type: 'tool-call',
+      data: {
+        toolName: 'Analyze data',
+        input: 'Question',
+        chartPath: 'exports/charts/temp_chart.png',
+      },
+    } as MessagePart
+
+    renderWithPart(toolCallPart)
+
+    expect(screen.getByText('Show details')).toBeTruthy()
+  })
+
+  it('should display chart with result text when both are present', () => {
+    const toolCallPart: MessagePart = {
+      type: 'tool-call',
+      data: {
+        toolName: 'Analyze data',
+        input: 'Question',
+        result: 'Chart generated',
+        chartPath: 'exports/charts/temp_chart.png',
+      },
+    } as MessagePart
+
+    const { container } = renderWithPart(toolCallPart)
+
+    const header = screen.getByRole('button', { name: /expand analyze data/i })
+    act(() => {
+      header.click()
+    })
+
+    expect(container.textContent).toContain('Chart generated')
+    expect(screen.getByAltText('Generated chart')).toBeTruthy()
+  })
+
+  it('should display chart with code when both are present', () => {
+    const toolCallPart: MessagePart = {
+      type: 'tool-call',
+      data: {
+        toolName: 'Analyze data',
+        input: 'Question',
+        code: 'plt.plot([1, 2, 3])',
+        chartPath: 'exports/charts/temp_chart.png',
+        language: 'python',
+      },
+    } as MessagePart
+
+    const { container } = renderWithPart(toolCallPart)
+
+    const header = screen.getByRole('button', { name: /expand analyze data/i })
+    act(() => {
+      header.click()
+    })
+
+    expect(container.textContent).toContain('plt.plot')
+    expect(screen.getByAltText('Generated chart')).toBeTruthy()
   })
 })
 

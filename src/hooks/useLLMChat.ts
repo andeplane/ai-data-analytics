@@ -375,7 +375,13 @@ export function useLLMChat({
             toolResults.push({ name: toolCall.name, result, input })
             
             // Extract result string for display
-            const resultString = typeof result.result === 'string' ? result.result : undefined
+            // If chart was generated, show friendly message instead of file path
+            let resultString: string | undefined
+            if (result.chartPath) {
+              resultString = 'Chart generated'
+            } else if (typeof result.result === 'string') {
+              resultString = result.result
+            }
             
             // Create tool call part for display
             toolCallParts.push(
@@ -384,7 +390,8 @@ export function useLLMChat({
                 input,
                 result.executedCode,
                 'python',
-                resultString
+                resultString,
+                result.chartPath
               )
             )
             

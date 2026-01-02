@@ -32,6 +32,7 @@ export interface ToolCallPart {
     code?: string
     language?: string
     result?: string
+    chartPath?: string
   }
 }
 
@@ -163,7 +164,8 @@ export function createToolCallPart(
   input: string,
   code?: string,
   language: string = 'python',
-  result?: string
+  result?: string,
+  chartPath?: string
 ): MessagePart {
   return {
     type: 'tool-call',
@@ -173,6 +175,7 @@ export function createToolCallPart(
       code,
       language,
       result,
+      chartPath,
     },
   } as MessagePart
 }

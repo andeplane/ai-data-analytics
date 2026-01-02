@@ -3,6 +3,7 @@ import { usePart } from '@llamaindex/chat-ui'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import type { ToolCallPart } from '../lib/chatUtils'
+import { ChartImage } from './ChartImage'
 
 interface ToolCallPartData {
   toolName: string
@@ -10,6 +11,7 @@ interface ToolCallPartData {
   code?: string
   language?: string
   result?: string
+  chartPath?: string
 }
 
 /**
@@ -30,8 +32,8 @@ export function ToolCallCollapsible() {
   const data = part.data as ToolCallPartData
   if (!data?.toolName || !data?.input) return null
 
-  // Check if we have any details to show (code or result)
-  const hasDetails = Boolean(data.code || data.result)
+  // Check if we have any details to show (code, result, or chart)
+  const hasDetails = Boolean(data.code || data.result || data.chartPath)
 
   const handleCopy = async () => {
     if (!data.code) return
@@ -137,16 +139,23 @@ export function ToolCallCollapsible() {
           )}
           
           {/* Result section */}
-          {data.result && (
+          {(data.result || data.chartPath) && (
             <div>
-              {data.code && (
+              {(data.code || data.result) && (
                 <div className="px-4 py-2 text-xs font-medium text-zinc-400 bg-zinc-950 border-b border-zinc-800">
                   Result
                 </div>
               )}
-              <div className="px-4 py-3 text-sm text-zinc-300 bg-zinc-950">
-                {data.result}
-              </div>
+              {data.result && (
+                <div className="px-4 py-3 text-sm text-zinc-300 bg-zinc-950">
+                  {data.result}
+                </div>
+              )}
+              {data.chartPath && (
+                <div className="px-4 py-3 bg-zinc-950">
+                  <ChartImage src={data.chartPath} alt="Generated chart" />
+                </div>
+              )}
             </div>
           )}
         </div>
