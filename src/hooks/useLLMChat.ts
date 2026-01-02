@@ -214,7 +214,8 @@ export function useLLMChat({
   const currentAssistantIdRef = useRef<string | null>(null)
   
   // Queue for messages waiting to be processed (supports multiple queued messages)
-  const queuedMessagesRef = useRef<Array<{ userMessage: Message; assistantId: string }>>([])
+  // Stores the original message and the ID of the loading placeholder to remove when replaying
+  const queuedMessagesRef = useRef<Array<{ message: Message; loadingId: string }>>([])
   
   // Track if we're currently processing to avoid double-processing
   const isProcessingRef = useRef(false)
@@ -302,272 +303,19 @@ export function useLLMChat({
     [engine, buildLLMOptions]
   )
 
-  /**
-   * Process a queued message (called when system becomes ready)
-   */
-  const processQueuedMessage = useCallback(
-    async (userMessage: Message, assistantId: string) => {
-      if (!engine) {
-        console.error('Cannot process message: web-llm engine not ready')
-        
-        // Update the loading message to show error
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  parts: [
-                    createTextPart(
-                      'Sorry, the AI engine is not available. Please refresh the page and try again.'
-                    ),
-                  ],
-                }
-              : m
-          )
-        )
-        
-        setInternalStatus('error')
-        isProcessingRef.current = false
-        return
-      }
-
-      const content = getTextFromParts(userMessage.parts)
-      isProcessingRef.current = true
-      setInternalStatus('submitted')
-
-      try {
-        // Build conversation history for API (excluding the loading message)
-        const conversationHistory: ChatCompletionMessageParam[] = messages
-          .filter((m) => {
-            // Skip the loading assistant message
-            if (m.id === assistantId) return false
-            // Skip messages with loading parts
-            const hasLoadingPart = m.parts.some((p) => (p as { type: string }).type === 'loading')
-            if (hasLoadingPart) return false
-            return true
-          })
-          .map((m) => ({
-            role: m.role as 'user' | 'assistant' | 'system',
-            content: getTextFromParts(m.parts),
-          }))
-
-        // Add the user message
-        conversationHistory.push({ role: 'user', content })
-
-        // Track chart paths from tool results
-        const chartPaths: string[] = []
-        
-        // Track if we've updated the assistant message yet
-        let assistantMessageUpdated = false
-
-        // Helper to update the assistant message content
-        const updateAssistantMessage = (newContent: string) => {
-          assistantMessageUpdated = true
-          setInternalStatus('streaming')
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, parts: [createTextPart(newContent)] }
-                : m
-            )
-          )
-        }
-
-        // Stream first LLM response
-        let { content: responseContent, isToolCall } = await streamLLMResponse(
-          conversationHistory,
-          updateAssistantMessage
-        )
-
-        // Handle tool calls (may need multiple rounds)
-        let maxToolRounds = 5
-        while (isToolCall && maxToolRounds > 0) {
-          maxToolRounds--
-
-          // Parse tool calls from response
-          const toolCalls = parseToolCalls(responseContent)
-          
-          if (toolCalls.length === 0) break
-
-          // Add tool calls to progress with pending status
-          const newProgress: ToolCallProgress[] = toolCalls.map((tc, idx) => ({
-            id: `${Date.now()}-${idx}`,
-            name: tc.name,
-            question: typeof tc.arguments.question === 'string' ? tc.arguments.question : undefined,
-            status: 'pending' as const,
-          }))
-          setToolCallProgress(prev => [...prev, ...newProgress])
-
-          for (const tc of toolCalls) {
-            const questionPreview = typeof tc.arguments.question === 'string'
-              ? tc.arguments.question.substring(0, 60) + (tc.arguments.question.length > 60 ? '...' : '')
-              : 'Tool call'
-            console.log(`🔧 Tool: ${tc.name} - ${questionPreview}`)
-            console.groupCollapsed(`📋 Full Tool Arguments [${tc.name}]`)
-            console.log(tc.arguments)
-            console.groupEnd()
-          }
-
-          // Process tool calls one by one with progress updates
-          const toolResults: Array<{ name: string; result: ToolResult }> = []
-          for (let i = 0; i < toolCalls.length; i++) {
-            const toolCall = toolCalls[i]
-            const progressId = newProgress[i].id
-            
-            // Mark as executing
-            setToolCallProgress(prev => 
-              prev.map(p => p.id === progressId ? { ...p, status: 'executing' as const } : p)
-            )
-            
-            const result = await executeTool(toolCall.name, toolCall.arguments)
-            toolResults.push({ name: toolCall.name, result })
-            
-            // Mark as complete with result preview
-            const resultPreview = result.chartPath 
-              ? 'Chart generated'
-              : typeof result.result === 'string'
-                ? result.result.substring(0, 100) + (result.result.length > 100 ? '...' : '')
-                : 'Tool result'
-            
-            setToolCallProgress(prev => 
-              prev.map(p => p.id === progressId ? { 
-                ...p, 
-                status: result.success ? 'complete' as const : 'error' as const,
-                resultPreview 
-              } : p)
-            )
-          }
-          
-          for (const { name, result } of toolResults) {
-            const resultPreview = result.chartPath 
-              ? 'Chart generated'
-              : typeof result.result === 'string'
-                ? result.result.substring(0, 60) + (result.result.length > 60 ? '...' : '')
-                : 'Tool result'
-            console.log(`✅ Tool Result [${name}]: ${resultPreview}`)
-            console.groupCollapsed(`📋 Full Tool Response [${name}]`)
-            console.log(result)
-            console.groupEnd()
-          }
-
-          // Collect all charts from tool results
-          for (const { result } of toolResults) {
-            if (result.chartPath) {
-              chartPaths.push(result.chartPath)
-            }
-          }
-
-          // Add assistant response with tool calls to history
-          conversationHistory.push({
-            role: 'assistant',
-            content: responseContent,
-          })
-
-          // Build tool response in Hermes format and add to history
-          const toolResponseContent = toolResults
-            .map(({ name, result }) => 
-              `<tool_response>\n{"name": "${name}", "content": ${JSON.stringify(sanitizeToolResultForLLM(result))}}\n</tool_response>`
-            )
-            .join('\n')
-          
-          conversationHistory.push({
-            role: 'user',
-            content: toolResponseContent,
-          })
-
-          // Stream next LLM response
-          const streamResult = await streamLLMResponse(
-            conversationHistory,
-            updateAssistantMessage
-          )
-          responseContent = streamResult.content
-          isToolCall = streamResult.isToolCall
-        }
-
-        // Remove any remaining tool call tags from final response for display
-        const displayContent = removeToolCallsFromContent(responseContent) || responseContent
-
-        // Finalize assistant message with final content and all charts
-        const assistantParts: MessagePart[] = [createTextPart(displayContent)]
-        for (const chartPath of chartPaths) {
-          assistantParts.push(createImagePart(chartPath))
-        }
-
-        if (assistantMessageUpdated) {
-          // Update existing message with final content
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, parts: assistantParts }
-                : m
-            )
-          )
-        } else {
-          // Message was never updated - update it now
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, parts: assistantParts }
-                : m
-            )
-          )
-        }
-
-        setInternalStatus('ready')
-        setToolCallProgress([]) // Clear tool progress
-        currentAssistantIdRef.current = null
-        isProcessingRef.current = false
-      } catch (err) {
-        console.error('Chat error:', err)
-
-        // Update the loading message to show error
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  parts: [
-                    createTextPart(
-                      `Sorry, I encountered an error: ${err instanceof Error ? err.message : String(err)}`
-                    ),
-                  ],
-                }
-              : m
-          )
-        )
-
-        setInternalStatus('error')
-        setToolCallProgress([]) // Clear tool progress on error
-        currentAssistantIdRef.current = null
-        isProcessingRef.current = false
-      }
-    },
-    [messages, streamLLMResponse, executeTool, engine, setMessages]
-  )
-
-  // Effect to process queued messages when system becomes ready (FIFO order)
-  useEffect(() => {
-    if (
-      queuedMessagesRef.current.length > 0 &&
-      isSystemReady(loadingState) &&
-      !isProcessingRef.current
-    ) {
-      // Shift the first message from the queue (FIFO)
-      const queued = queuedMessagesRef.current.shift()!
-      processQueuedMessage(queued.userMessage, queued.assistantId)
-    }
-  }, [loadingState, processQueuedMessage])
+  // Ref to store sendMessage callback to avoid dependency issues in effects
+  const sendMessageRef = useRef<((msg: Message) => Promise<void>) | null>(null)
 
   // Effect to update loading messages with current loading state (for all queued messages)
   useEffect(() => {
     if (queuedMessagesRef.current.length > 0 && !isSystemReady(loadingState) && !isProcessingRef.current) {
-      // Get all assistant IDs from the queue
-      const queuedAssistantIds = new Set(queuedMessagesRef.current.map(q => q.assistantId))
+      // Get all loading IDs from the queue
+      const queuedLoadingIds = new Set(queuedMessagesRef.current.map(q => q.loadingId))
       
       // Update all loading messages with current loading state
       setMessages((prev) =>
         prev.map((m) =>
-          queuedAssistantIds.has(m.id)
+          queuedLoadingIds.has(m.id)
             ? { ...m, parts: [createLoadingPart(loadingState)] }
             : m
         )
@@ -578,6 +326,7 @@ export function useLLMChat({
   /**
    * Send a message and get a streaming response.
    * If system isn't ready, queues the message and shows loading state.
+   * When system becomes ready, queued messages are replayed through this same function.
    * Compatible with @llamaindex/chat-ui ChatHandler interface.
    */
   const sendMessage = useCallback(
@@ -585,29 +334,30 @@ export function useLLMChat({
       const content = getTextFromParts(msg.parts)
       if (!content.trim()) return
 
-      // Add user message to UI
-      const userMessage: Message = {
-        id: msg.id || generateId(),
-        role: 'user',
-        parts: [createTextPart(content)],
+      // Ensure message has an ID for consistent tracking
+      const messageId = msg.id || generateId()
+      if (!msg.id) {
+        // Assign the generated ID to the message object so it's consistent when replaying
+        msg.id = messageId
       }
-
-      // Create assistant message placeholder
-      const assistantId = generateId()
-      currentAssistantIdRef.current = assistantId
 
       // Check if system is ready
       if (!isSystemReady(loadingState)) {
         // Queue the message and show loading state
-        queuedMessagesRef.current.push({ userMessage, assistantId })
+        const loadingId = generateId()
+        queuedMessagesRef.current.push({ message: msg, loadingId })
         setInternalStatus('awaiting-deps')
 
-        // Add user message and loading assistant message
+        // Add user message and loading assistant message placeholder
         setMessages((prev) => [
           ...prev,
-          userMessage,
           {
-            id: assistantId,
+            id: messageId,
+            role: 'user',
+            parts: [createTextPart(content)],
+          },
+          {
+            id: loadingId,
             role: 'assistant',
             parts: [createLoadingPart(loadingState)],
           },
@@ -617,7 +367,23 @@ export function useLLMChat({
       }
 
       // System is ready, process immediately
-      setMessages((prev) => [...prev, userMessage])
+      // Check if this message was already added (e.g., when it was queued)
+      // If a message with this ID already exists, skip adding it
+      const messageAlreadyExists = messages.some((m) => m.id === messageId)
+      
+      // Add user message to UI only if it doesn't already exist
+      if (!messageAlreadyExists) {
+        const userMessage: Message = {
+          id: messageId,
+          role: 'user',
+          parts: [createTextPart(content)],
+        }
+        setMessages((prev) => [...prev, userMessage])
+      }
+      
+      // Create assistant message placeholder
+      const assistantId = generateId()
+      currentAssistantIdRef.current = assistantId
       setInternalStatus('submitted')
 
       try {
@@ -813,6 +579,32 @@ export function useLLMChat({
     },
     [messages, streamLLMResponse, executeTool, loadingState, setMessages]
   )
+  
+  // Keep the ref updated with the latest callback
+  // This allows the effect to call the latest version without having it in the dependency array
+  useEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
+
+  // Effect to replay queued messages when system becomes ready (FIFO order)
+  // Removes the loading placeholder and re-sends through the normal sendMessage path
+  useEffect(() => {
+    if (
+      queuedMessagesRef.current.length > 0 &&
+      isSystemReady(loadingState) &&
+      !isProcessingRef.current &&
+      sendMessageRef.current
+    ) {
+      // Shift the first message from the queue (FIFO)
+      const queued = queuedMessagesRef.current.shift()!
+      
+      // Remove the loading placeholder message
+      setMessages((prev) => prev.filter((m) => m.id !== queued.loadingId))
+      
+      // Re-send through the normal path (system is now ready, so it will process immediately)
+      sendMessageRef.current(queued.message)
+    }
+  }, [loadingState, setMessages])
 
   const stop = useCallback(async () => {
     setInternalStatus('ready')
