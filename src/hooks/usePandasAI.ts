@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import type { PyodideProxy } from './usePyodide'
 import pandasaiLoaderCode from '../lib/pandasai-loader.py?raw'
+import { escapePythonString, escapeCsvForPython } from '../lib/pythonUtils'
 
 export type PandasAIStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -78,8 +79,8 @@ print("PandasAI loaded successfully!")
       }
 
       // Escape the CSV data for Python string
-      const escapedCsv = csvData.replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"')
-      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const escapedCsv = escapeCsvForPython(csvData)
+      const escapedName = escapePythonString(name)
 
       await pyodide.runPythonAsync(`
 import pandas as pd
@@ -101,8 +102,8 @@ print(f"Loaded dataframe '${escapedName}' with {len(_temp_df)} rows")
       }
 
       // Escape for Python strings
-      const escapedName = dataframeName.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-      const escapedQuestion = question.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const escapedName = escapePythonString(dataframeName)
+      const escapedQuestion = escapePythonString(question)
 
       const result = await pyodide.runPythonAsync(`
 result = dataframes["${escapedName}"].chat("${escapedQuestion}")
@@ -120,7 +121,7 @@ str(result)
         throw new Error('PandasAI not ready')
       }
 
-      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const escapedName = escapePythonString(name)
 
       const result = await pyodide.runPythonAsync(`
 import json
@@ -143,7 +144,7 @@ json.dumps({
         throw new Error('PandasAI not ready')
       }
 
-      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      const escapedName = escapePythonString(name)
 
       await pyodide.runPythonAsync(`
 if "${escapedName}" in dataframes:

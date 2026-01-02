@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import type { PyodideProxy } from './usePyodide'
 import type { AnalyzeDataArgs } from '../lib/tools'
 import { isAnalyzeDataArgs } from '../lib/tools'
+import { escapePythonString, escapeNamesForPython } from '../lib/pythonUtils'
 
 export interface ToolResult {
   success: boolean
@@ -41,10 +42,8 @@ export function useToolExecutor({ pyodide }: UseToolExecutorOptions) {
 
       try {
         // Escape for Python strings
-        const escapedNames = dataframe_names.map((name) =>
-          name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-        )
-        const escapedQuestion = question.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        const escapedNames = escapeNamesForPython(dataframe_names)
+        const escapedQuestion = escapePythonString(question)
 
         // Build Python code to execute PandasAI
         // For single dataframe: use SmartDataframe.chat() directly (already configured)

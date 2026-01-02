@@ -1,6 +1,24 @@
 import type { MessagePart } from '@llamaindex/chat-ui'
 import type { ToolResult } from '../hooks/useToolExecutor'
 
+/**
+ * System loading state for tracking initialization progress.
+ * Used by createLoadingPart and isSystemReady.
+ */
+export interface SystemLoadingState {
+  webllmStatus: 'idle' | 'loading' | 'ready' | 'error'
+  webllmProgress: number
+  webllmProgressText: string
+  elapsedTime: number
+  estimatedTimeRemaining: number | null
+  pyodideStatus: 'idle' | 'loading' | 'ready' | 'error'
+  pandasStatus: 'idle' | 'loading' | 'ready' | 'error'
+  hasQueuedFiles: boolean
+  pyodideError?: string | null
+  pandasError?: string | null
+  onRetryPandas?: () => void
+}
+
 export interface ParsedToolCall {
   name: string
   arguments: Record<string, unknown>
@@ -83,5 +101,57 @@ export function getTextFromParts(parts: MessagePart[]): string {
     )
     .map((p) => p.text)
     .join('\n')
+}
+
+/**
+ * Generate a unique ID for messages and requests.
+ * Combines timestamp with random string for guaranteed uniqueness.
+ */
+export function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/**
+ * Create a text message part compatible with @llamaindex/chat-ui
+ */
+export function createTextPart(text: string): MessagePart {
+  return { type: 'text', text }
+}
+
+/**
+ * Create a file/image message part compatible with @llamaindex/chat-ui
+ */
+export function createImagePart(imageUrl: string): MessagePart {
+  return {
+    type: 'data-file',
+    data: {
+      url: imageUrl,
+      filename: 'chart.png',
+      mediaType: 'image/png',
+    },
+  }
+}
+
+/**
+ * Create a loading message part for displaying loading progress.
+ * Uses a custom 'loading' type that can be handled by the UI.
+ */
+export function createLoadingPart(loadingState: SystemLoadingState): MessagePart {
+  return {
+    type: 'loading',
+    loadingState,
+  } as MessagePart
+}
+
+/**
+ * Check if system is ready to process messages.
+ * All components must be ready and no files pending upload.
+ */
+export function isSystemReady(loadingState: SystemLoadingState): boolean {
+  return (
+    loadingState.webllmStatus === 'ready' &&
+    loadingState.pandasStatus === 'ready' &&
+    !loadingState.hasQueuedFiles
+  )
 }
 

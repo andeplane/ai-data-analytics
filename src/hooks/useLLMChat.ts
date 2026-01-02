@@ -4,15 +4,19 @@ import { buildSystemPrompt, type DataFrameInfo } from '../lib/systemPrompt'
 import { useToolExecutor, type ToolResult } from './useToolExecutor'
 import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
 import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
-import type { WebLLMStatus } from './useWebLLM'
-import type { PandasAIStatus } from './usePandasAI'
-import type { PyodideStatus, PyodideProxy } from './usePyodide'
+import type { PyodideProxy } from './usePyodide'
 import {
   parseToolCalls,
   hasToolCalls,
   removeToolCallsFromContent,
   sanitizeToolResultForLLM,
   getTextFromParts,
+  generateId,
+  createTextPart,
+  createImagePart,
+  createLoadingPart,
+  isSystemReady,
+  type SystemLoadingState,
 } from '../lib/chatUtils'
 
 // Internal status includes 'awaiting-deps' for tracking queued messages
@@ -28,71 +32,14 @@ export interface ToolCallProgress {
   resultPreview?: string
 }
 
-export interface SystemLoadingState {
-  webllmStatus: WebLLMStatus
-  webllmProgress: number
-  webllmProgressText: string
-  elapsedTime: number
-  estimatedTimeRemaining: number | null
-  pyodideStatus: PyodideStatus
-  pandasStatus: PandasAIStatus
-  hasQueuedFiles: boolean
-  pyodideError?: string | null
-  pandasError?: string | null
-  onRetryPandas?: () => void
-}
+// Re-export SystemLoadingState from chatUtils for backwards compatibility
+export type { SystemLoadingState }
 
 interface UseLLMChatOptions {
   pyodide: PyodideProxy | null
   engine: MLCEngineInterface | null
   dataframes: DataFrameInfo[]
   loadingState: SystemLoadingState
-}
-
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 9)
-}
-
-/**
- * Create a text message part compatible with @llamaindex/chat-ui
- */
-function createTextPart(text: string): MessagePart {
-  return { type: 'text', text }
-}
-
-/**
- * Create a file/image message part compatible with @llamaindex/chat-ui
- */
-function createImagePart(imageUrl: string): MessagePart {
-  return {
-    type: 'data-file',
-    data: {
-      url: imageUrl,
-      filename: 'chart.png',
-      mediaType: 'image/png',
-    },
-  }
-}
-
-/**
- * Create a loading message part for displaying loading progress
- */
-function createLoadingPart(loadingState: SystemLoadingState): MessagePart {
-  return {
-    type: 'loading',
-    loadingState,
-  } as MessagePart
-}
-
-/**
- * Check if system is ready to process messages
- */
-function isSystemReady(loadingState: SystemLoadingState): boolean {
-  return (
-    loadingState.webllmStatus === 'ready' &&
-    loadingState.pandasStatus === 'ready' &&
-    !loadingState.hasQueuedFiles
-  )
 }
 
 /**

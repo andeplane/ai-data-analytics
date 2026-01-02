@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolResult } from '../hooks/useToolExecutor'
 import {
+  createImagePart,
+  createLoadingPart,
+  createTextPart,
+  generateId,
   getTextFromParts,
   hasToolCalls,
+  isSystemReady,
   parseToolCalls,
   removeToolCallsFromContent,
   sanitizeToolResultForLLM,
+  type SystemLoadingState,
 } from './chatUtils'
 
 describe(parseToolCalls.name, () => {
@@ -179,6 +185,174 @@ describe(getTextFromParts.name, () => {
     const parts = [{ type: 'text' as const, text: 'Single' }]
 
     expect(getTextFromParts(parts)).toBe('Single')
+  })
+})
+
+describe(generateId.name, () => {
+  it('should return a string', () => {
+    expect(typeof generateId()).toBe('string')
+  })
+
+  it('should generate unique IDs', () => {
+    const ids = new Set(Array.from({ length: 100 }, () => generateId()))
+    expect(ids.size).toBe(100)
+  })
+
+  it('should include timestamp component', () => {
+    const before = Date.now()
+    const id = generateId()
+    const after = Date.now()
+
+    // ID format: timestamp-randomstring
+    const timestampPart = parseInt(id.split('-')[0], 10)
+    expect(timestampPart).toBeGreaterThanOrEqual(before)
+    expect(timestampPart).toBeLessThanOrEqual(after)
+  })
+
+  it('should have random suffix', () => {
+    const id = generateId()
+    const parts = id.split('-')
+
+    // Should have timestamp and random parts
+    expect(parts.length).toBeGreaterThanOrEqual(2)
+    expect(parts[1].length).toBeGreaterThan(0)
+  })
+})
+
+describe(createTextPart.name, () => {
+  it('should create text part with correct type', () => {
+    const part = createTextPart('Hello')
+
+    expect(part.type).toBe('text')
+    expect(part).toHaveProperty('text', 'Hello')
+  })
+
+  it('should handle empty string', () => {
+    const part = createTextPart('')
+
+    expect(part.type).toBe('text')
+    expect(part).toHaveProperty('text', '')
+  })
+
+  it('should preserve multiline text', () => {
+    const text = 'Line 1\nLine 2\nLine 3'
+    const part = createTextPart(text)
+
+    expect(part).toHaveProperty('text', text)
+  })
+})
+
+describe(createImagePart.name, () => {
+  it('should create data-file part with correct structure', () => {
+    const imageUrl = 'data:image/png;base64,abc123'
+    const part = createImagePart(imageUrl)
+
+    expect(part.type).toBe('data-file')
+    expect(part).toHaveProperty('data')
+  })
+
+  it('should set url in data property', () => {
+    const imageUrl = 'data:image/png;base64,xyz'
+    const part = createImagePart(imageUrl) as { type: string; data: { url: string } }
+
+    expect(part.data.url).toBe(imageUrl)
+  })
+
+  it('should set default filename', () => {
+    const part = createImagePart('url') as { type: string; data: { filename: string } }
+
+    expect(part.data.filename).toBe('chart.png')
+  })
+
+  it('should set mediaType to image/png', () => {
+    const part = createImagePart('url') as { type: string; data: { mediaType: string } }
+
+    expect(part.data.mediaType).toBe('image/png')
+  })
+})
+
+describe(createLoadingPart.name, () => {
+  const mockLoadingState: SystemLoadingState = {
+    webllmStatus: 'loading',
+    webllmProgress: 50,
+    webllmProgressText: 'Loading model...',
+    elapsedTime: 5000,
+    estimatedTimeRemaining: 10000,
+    pyodideStatus: 'ready',
+    pandasStatus: 'loading',
+    hasQueuedFiles: false,
+  }
+
+  it('should create loading part with correct type', () => {
+    const part = createLoadingPart(mockLoadingState)
+
+    expect(part.type).toBe('loading')
+  })
+
+  it('should include loadingState', () => {
+    const part = createLoadingPart(mockLoadingState) as { type: string; loadingState: SystemLoadingState }
+
+    expect(part.loadingState).toBe(mockLoadingState)
+  })
+
+  it('should preserve all loading state properties', () => {
+    const part = createLoadingPart(mockLoadingState) as { type: string; loadingState: SystemLoadingState }
+
+    expect(part.loadingState.webllmProgress).toBe(50)
+    expect(part.loadingState.webllmProgressText).toBe('Loading model...')
+    expect(part.loadingState.pyodideStatus).toBe('ready')
+  })
+})
+
+describe(isSystemReady.name, () => {
+  const createLoadingState = (
+    overrides: Partial<SystemLoadingState> = {}
+  ): SystemLoadingState => ({
+    webllmStatus: 'ready',
+    webllmProgress: 100,
+    webllmProgressText: 'Ready',
+    elapsedTime: 0,
+    estimatedTimeRemaining: null,
+    pyodideStatus: 'ready',
+    pandasStatus: 'ready',
+    hasQueuedFiles: false,
+    ...overrides,
+  })
+
+  it('should return true when all systems ready and no queued files', () => {
+    expect(isSystemReady(createLoadingState())).toBe(true)
+  })
+
+  it.each([
+    ['webllm loading', { webllmStatus: 'loading' as const }],
+    ['webllm idle', { webllmStatus: 'idle' as const }],
+    ['webllm error', { webllmStatus: 'error' as const }],
+    ['pandas loading', { pandasStatus: 'loading' as const }],
+    ['pandas idle', { pandasStatus: 'idle' as const }],
+    ['pandas error', { pandasStatus: 'error' as const }],
+    ['queued files', { hasQueuedFiles: true }],
+  ])('should return false when %s', (_description, overrides) => {
+    expect(isSystemReady(createLoadingState(overrides))).toBe(false)
+  })
+
+  it('should return false when multiple conditions not met', () => {
+    const state = createLoadingState({
+      webllmStatus: 'loading',
+      pandasStatus: 'idle',
+      hasQueuedFiles: true,
+    })
+
+    expect(isSystemReady(state)).toBe(false)
+  })
+
+  it('should ignore pyodide status (pyodide ready is implied by pandas ready)', () => {
+    // Pyodide status doesn't directly affect isSystemReady
+    // because if pandas is ready, pyodide must be ready
+    const state = createLoadingState({
+      pyodideStatus: 'loading',
+    })
+
+    expect(isSystemReady(state)).toBe(true)
   })
 })
 

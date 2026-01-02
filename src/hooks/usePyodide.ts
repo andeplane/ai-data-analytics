@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { generateId } from '../lib/chatUtils'
 
 export type PyodideStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -59,13 +60,6 @@ interface UsePyodideReturn {
 type PendingRequest = {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
-}
-
-/**
- * Generate a unique ID for request tracking
- */
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
 export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
