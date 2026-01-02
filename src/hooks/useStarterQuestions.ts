@@ -41,7 +41,7 @@ export function buildQuestionGenerationPrompt(dataframes: DataFrameInfo[]): stri
 ${dataframesList}
 
 You have access to pandas and matplotlib for analysis. Available capabilities:
-- Statistical analysis (correlations, distributions, outliers, aggregations)
+- Statistical analysis (correlation analysis, linear regression, distributions, outliers, aggregations)
 - Data visualization (histograms, scatter plots, bar charts, line plots, pie charts)
 - Data filtering, grouping, and transformations
 
