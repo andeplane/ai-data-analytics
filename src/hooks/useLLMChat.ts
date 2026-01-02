@@ -418,7 +418,8 @@ export function useLLMChat({
                 result.executedCode,
                 'python',
                 resultString,
-                result.chartPath
+                result.chartPath,
+                result.success
               )
             )
             

@@ -11,6 +11,7 @@ interface ToolCallPartData {
   language?: string
   result?: string
   chartPath?: string
+  success?: boolean
 }
 
 /**
@@ -32,8 +33,8 @@ export function ToolCallCollapsible() {
   const data = (part as { type: 'tool-call'; data: ToolCallPartData }).data
   if (!data?.toolName || !data?.input) return null
 
-  // Check if we have any details to show (code, result, or chart)
-  const hasDetails = Boolean(data.code || data.result || data.chartPath)
+  // Check if we have any details to show (code, result, chart, or error)
+  const hasDetails = Boolean(data.code || data.result || data.chartPath || (data.success === false && data.result))
 
   const handleCopy = async () => {
     if (!data.code) return
@@ -59,7 +60,7 @@ export function ToolCallCollapsible() {
           aria-label={isExpanded ? `Collapse ${data.toolName}` : `Expand ${data.toolName}`}
         >
           <svg
-            className={`w-4 h-4 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -76,7 +77,7 @@ export function ToolCallCollapsible() {
         {isExpanded && data.code && (
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors ml-2 flex-shrink-0"
+            className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors ml-2 shrink-0"
             aria-label="Copy code"
           >
             {copied ? (
@@ -104,7 +105,7 @@ export function ToolCallCollapsible() {
         {!isExpanded && hasDetails && (
           <button
             onClick={() => setIsExpanded(true)}
-            className="text-xs text-zinc-400 hover:text-zinc-200 ml-2 flex-shrink-0 transition-colors"
+            className="text-xs text-zinc-400 hover:text-zinc-200 ml-2 shrink-0 transition-colors"
             aria-label="Show details"
           >
             Show details
@@ -142,12 +143,21 @@ export function ToolCallCollapsible() {
           {(data.result || data.chartPath) && (
             <div>
               {(data.code || data.result) && (
-                <div className="px-4 py-2 text-xs font-medium text-zinc-400 bg-zinc-950 border-b border-zinc-800">
-                  Result
+                <div className="px-4 py-2 text-xs font-medium text-zinc-400 bg-zinc-950 border-b border-zinc-800 flex items-center gap-2">
+                  {data.success === false && (
+                    <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  )}
+                  <span>{data.success === false ? 'Error' : 'Result'}</span>
                 </div>
               )}
               {data.result && (
-                <div className="px-4 py-3 text-sm text-zinc-300 bg-zinc-950 whitespace-pre-wrap">
+                <div className={`px-4 py-3 text-sm bg-zinc-950 whitespace-pre-wrap ${
+                  data.success === false
+                    ? 'text-red-400 bg-red-500/10 border-l-4 border-red-500/50'
+                    : 'text-zinc-300'
+                }`}>
                   {data.result}
                 </div>
               )}
