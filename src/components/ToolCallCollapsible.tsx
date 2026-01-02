@@ -147,7 +147,7 @@ export function ToolCallCollapsible() {
                 </div>
               )}
               {data.result && (
-                <div className="px-4 py-3 text-sm text-zinc-300 bg-zinc-950">
+                <div className="px-4 py-3 text-sm text-zinc-300 bg-zinc-950 whitespace-pre-wrap">
                   {data.result}
                 </div>
               )}
