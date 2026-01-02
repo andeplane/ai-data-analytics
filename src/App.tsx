@@ -47,14 +47,15 @@ function App() {
   }, [])
   
   const { pyodide, status: pyodideStatus } = usePyodide({ onLLMRequest: handleLLMRequest })
-  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo } = usePandasAI(pyodide)
+  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo, removeDataframe } = usePandasAI(pyodide)
   
   // Dataframe management
-  const { dataframes, hasQueuedFiles, handleFileLoad } = useDataframes({
+  const { dataframes, hasQueuedFiles, handleFileLoad, removeDataframe: handleRemoveDataframe } = useDataframes({
     pyodide,
     pandasStatus,
     loadDataframe,
     getDataframeInfo,
+    removeDataframe,
   })
 
   // Convert dataframes to DataFrameInfo for the chat hook
@@ -229,6 +230,7 @@ function App() {
             dataframes={dataframes} 
             activeDataframe={null}
             onSelect={() => {}}
+            onRemove={handleRemoveDataframe}
           />
         </div>
 

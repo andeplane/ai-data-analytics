@@ -17,6 +17,7 @@ interface UsePandasAIReturn {
   chat: (dataframeName: string, question: string) => Promise<string>
   loadDataframe: (name: string, csvData: string) => Promise<void>
   getDataframeInfo: (name: string) => Promise<DataframeInfo>
+  removeDataframe: (name: string) => Promise<void>
 }
 
 export function usePandasAI(pyodide: PyodideProxy | null): UsePandasAIReturn {
@@ -125,6 +126,23 @@ json.dumps({
     [pyodide, status]
   )
 
+  const removeDataframe = useCallback(
+    async (name: string) => {
+      if (!pyodide || status !== 'ready') {
+        throw new Error('PandasAI not ready')
+      }
+
+      const escapedName = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+      await pyodide.runPythonAsync(`
+if "${escapedName}" in dataframes:
+    del dataframes["${escapedName}"]
+    print(f"Removed dataframe '${escapedName}'")
+`)
+    },
+    [pyodide, status]
+  )
+
   return {
     status,
     error,
@@ -132,5 +150,6 @@ json.dumps({
     chat,
     loadDataframe,
     getDataframeInfo,
+    removeDataframe,
   }
 }

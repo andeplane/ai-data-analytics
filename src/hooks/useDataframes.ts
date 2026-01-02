@@ -19,12 +19,14 @@ interface UseDataframesOptions {
   pandasStatus: 'idle' | 'loading' | 'ready' | 'error'
   loadDataframe: (name: string, csvContent: string) => Promise<void>
   getDataframeInfo: (name: string) => Promise<{ rows: number; columns: string[]; head: Record<string, unknown>[] }>
+  removeDataframe: (name: string) => Promise<void>
 }
 
 interface UseDataframesResult {
   dataframes: DataFrame[]
   hasQueuedFiles: boolean
   handleFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
+  removeDataframe: (name: string) => Promise<void>
 }
 
 /**
@@ -51,6 +53,7 @@ export function useDataframes({
   pandasStatus,
   loadDataframe,
   getDataframeInfo,
+  removeDataframe,
 }: UseDataframesOptions): UseDataframesResult {
   const [dataframes, setDataframes] = useState<DataFrame[]>([])
   const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([])
@@ -122,9 +125,31 @@ export function useDataframes({
     }
   }, [pandasStatus, queuedFiles, pyodide, processFile])
 
+  /**
+   * Remove a dataframe from both Python runtime and React state
+   */
+  const handleRemoveDataframe = useCallback(async (name: string) => {
+    try {
+      // Remove from Python runtime if PandasAI is ready
+      if (pandasStatus === 'ready') {
+        await removeDataframe(name)
+      }
+      
+      // Remove from React state
+      setDataframes(prev => prev.filter(df => df.name !== name))
+      
+      // Also remove from queued files if it exists there
+      setQueuedFiles(prev => prev.filter(file => file.name !== name))
+    } catch (err) {
+      console.error('Failed to remove dataframe:', err)
+      alert(`Failed to remove dataframe: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [pandasStatus, removeDataframe])
+
   return {
     dataframes,
     hasQueuedFiles: queuedFiles.length > 0,
     handleFileLoad,
+    removeDataframe: handleRemoveDataframe,
   }
 }
