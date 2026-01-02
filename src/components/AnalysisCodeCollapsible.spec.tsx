@@ -5,7 +5,11 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MessagePart } from '@llamaindex/chat-ui'
 
-// Mock usePart hook before importing component
+// Note: Mocking @llamaindex/chat-ui because usePart requires ChatPartProvider context
+// from the external library. While we could wrap with the library's provider, importing
+// ChatPartProvider causes CSS-in-JS parsing errors in jsdom (due to @stitches/core via sandpack
+// dependencies). Mocking usePart avoids these test environment issues while still allowing
+// us to test the component's behavior.
 const mockUsePart = vi.fn()
 vi.mock('@llamaindex/chat-ui', () => ({
   usePart: (type: string) => mockUsePart(type),
