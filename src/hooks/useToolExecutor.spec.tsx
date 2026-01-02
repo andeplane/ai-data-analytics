@@ -264,7 +264,8 @@ describe(useToolExecutor.name, () => {
       })
 
       // Assert
-      expect(toolResult.success).toBe(true)
+      expect(toolResult).toBeDefined()
+      expect(toolResult!.success).toBe(true)
       expect(mockPyodide.runPythonAsync).toHaveBeenCalled()
     })
 

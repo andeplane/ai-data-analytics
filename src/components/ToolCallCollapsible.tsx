@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { usePart } from '@llamaindex/chat-ui'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import type { ToolCallPart } from '../lib/chatUtils'
 import { ChartImage } from './ChartImage'
 
 interface ToolCallPartData {
@@ -29,7 +28,8 @@ export function ToolCallCollapsible() {
   // Only render if current part is a tool-call part
   if (!part || part.type !== 'tool-call') return null
 
-  const data = part.data as ToolCallPartData
+  // TypeScript doesn't know that tool-call parts have data, so we need to assert
+  const data = (part as { type: 'tool-call'; data: ToolCallPartData }).data
   if (!data?.toolName || !data?.input) return null
 
   // Check if we have any details to show (code, result, or chart)

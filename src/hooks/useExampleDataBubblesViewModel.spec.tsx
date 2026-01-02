@@ -93,7 +93,8 @@ describe(useExampleDataBubblesViewModel.name, () => {
     expect(mockOnFileLoad).toHaveBeenCalledWith(
       'test_file',
       'csv,data,here',
-      'csv'
+      'csv',
+      'example_data'
     )
   })
 
