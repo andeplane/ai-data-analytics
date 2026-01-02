@@ -16,7 +16,20 @@ export const EXAMPLE_FILES: ExampleFile[] = [
       '10,000 customer records with names, companies, locations, and contact info',
     url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/customers_10000.csv',
   },
-  // More files can be added here later
+  {
+    name: 'students-performance',
+    label: 'students-performance.csv',
+    description:
+      'Student performance data with demographics, parental education, and test scores (math, reading, writing)',
+    url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/students-performance.csv',
+  },
+  {
+    name: 'winequality-red',
+    label: 'winequality-red.csv',
+    description:
+      'Red wine quality dataset with chemical properties (acidity, sugar, alcohol, etc.) and quality ratings',
+    url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/winequality-red.csv',
+  },
 ]
 
 // Default dependencies for production
