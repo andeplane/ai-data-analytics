@@ -24,6 +24,17 @@ export interface ParsedToolCall {
   arguments: Record<string, unknown>
 }
 
+export interface ToolCallPart {
+  type: 'tool-call'
+  data: {
+    toolName: string
+    input: string
+    code?: string
+    language?: string
+    result?: string
+  }
+}
+
 /**
  * Parse <tool_call> XML tags from the model's response content.
  * Hermes models output tool calls in this format:
@@ -144,15 +155,24 @@ export function createLoadingPart(loadingState: SystemLoadingState): MessagePart
 }
 
 /**
- * Create a code message part for displaying executed Python code.
- * Uses a custom 'data-code' type that can be handled by the UI.
+ * Create a tool call message part for displaying tool executions.
+ * Uses a custom 'tool-call' type that can be handled by the UI.
  */
-export function createCodePart(code: string): MessagePart {
+export function createToolCallPart(
+  toolName: string,
+  input: string,
+  code?: string,
+  language: string = 'python',
+  result?: string
+): MessagePart {
   return {
-    type: 'data-code',
+    type: 'tool-call',
     data: {
+      toolName,
+      input,
       code,
-      language: 'python',
+      language,
+      result,
     },
   } as MessagePart
 }

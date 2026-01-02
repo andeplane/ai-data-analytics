@@ -8,7 +8,7 @@ import { useDataframes } from './hooks/useDataframes'
 import { FileUpload } from './components/FileUpload'
 import { DataFrameList } from './components/DataFrameList'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
-import { AnalysisCodeCollapsible } from './components/AnalysisCodeCollapsible'
+import { ToolCallCollapsible } from './components/ToolCallCollapsible'
 import { StarterBubbles } from './components/StarterBubbles'
 import { ExampleDataBubbles } from './components/ExampleDataBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
@@ -185,8 +185,8 @@ function App() {
 
     return (
       <ChatMessage.Content>
-        {/* Render executed code in collapsible section (above response) */}
-        <AnalysisCodeCollapsible />
+        {/* Render tool call executions in collapsible section (above response) */}
+        <ToolCallCollapsible />
         <ChatMessage.Content.Markdown className="prose-invert" />
         {/* Render chart images with custom component for proper sizing */}
         <ChartImagePartUI className="mt-2" />

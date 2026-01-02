@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolResult } from '../hooks/useToolExecutor'
 import {
-  createCodePart,
+  createToolCallPart,
   createImagePart,
   createLoadingPart,
   createTextPart,
@@ -305,41 +305,91 @@ describe(createLoadingPart.name, () => {
   })
 })
 
-describe(createCodePart.name, () => {
-  it('should create data-code part with correct type', () => {
-    const code = 'print("Hello, World!")'
-    const part = createCodePart(code)
+describe(createToolCallPart.name, () => {
+  it('should create tool-call part with correct type', () => {
+    const part = createToolCallPart('Analyze data', 'How many customers?')
 
-    expect(part.type).toBe('data-code')
+    expect(part.type).toBe('tool-call')
     expect(part).toHaveProperty('data')
   })
 
-  it('should set code in data property', () => {
+  it('should set toolName and input in data property', () => {
+    const part = createToolCallPart('Analyze data', 'What is the average?') as {
+      type: string
+      data: { toolName: string; input: string }
+    }
+
+    expect(part.data.toolName).toBe('Analyze data')
+    expect(part.data.input).toBe('What is the average?')
+  })
+
+  it('should include code when provided', () => {
     const code = 'import pandas as pd\ndf = pd.read_csv("data.csv")'
-    const part = createCodePart(code) as { type: string; data: { code: string; language: string } }
+    const part = createToolCallPart('Analyze data', 'Question', code) as {
+      type: string
+      data: { code: string }
+    }
 
     expect(part.data.code).toBe(code)
   })
 
-  it('should set language to python', () => {
-    const part = createCodePart('code') as { type: string; data: { language: string } }
+  it('should set language to python by default', () => {
+    const part = createToolCallPart('Tool', 'Input') as {
+      type: string
+      data: { language: string }
+    }
 
     expect(part.data.language).toBe('python')
   })
 
-  it('should handle empty string', () => {
-    const part = createCodePart('')
+  it('should allow custom language', () => {
+    const part = createToolCallPart('Tool', 'Input', 'SELECT * FROM users', 'sql') as {
+      type: string
+      data: { language: string }
+    }
 
-    expect(part.type).toBe('data-code')
-    const dataPart = part as { type: string; data: { code: string } }
-    expect(dataPart.data.code).toBe('')
+    expect(part.data.language).toBe('sql')
+  })
+
+  it('should handle empty input', () => {
+    const part = createToolCallPart('Tool', '')
+
+    expect(part.type).toBe('tool-call')
+    const dataPart = part as { type: string; data: { input: string } }
+    expect(dataPart.data.input).toBe('')
   })
 
   it('should preserve multiline code', () => {
     const code = 'def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)'
-    const part = createCodePart(code) as { type: string; data: { code: string } }
+    const part = createToolCallPart('Tool', 'Input', code) as {
+      type: string
+      data: { code: string }
+    }
 
     expect(part.data.code).toBe(code)
+  })
+
+  it('should include result when provided', () => {
+    const result = 'The average is 42.5'
+    const part = createToolCallPart('Analyze data', 'Question', undefined, 'python', result) as {
+      type: string
+      data: { result: string }
+    }
+
+    expect(part.data.result).toBe(result)
+  })
+
+  it('should handle all parameters together', () => {
+    const code = 'print("Hello")'
+    const result = 'Hello'
+    const part = createToolCallPart('Tool', 'Input', code, 'python', result) as {
+      type: string
+      data: { code: string; result: string; language: string }
+    }
+
+    expect(part.data.code).toBe(code)
+    expect(part.data.result).toBe(result)
+    expect(part.data.language).toBe('python')
   })
 })
 

@@ -14,7 +14,7 @@ import {
   generateId,
   createTextPart,
   createImagePart,
-  createCodePart,
+  createToolCallPart,
   createLoadingPart,
   isSystemReady,
   type SystemLoadingState,
@@ -284,8 +284,8 @@ export function useLLMChat({
         // Track chart paths from tool results
         const chartPaths: string[] = []
         
-        // Track executed code from tool results
-        const executedCodes: string[] = []
+        // Track tool call parts (for displaying tool executions)
+        const toolCallParts: MessagePart[] = []
         
         // Track if we've shown the assistant message yet
         let assistantMessageShown = false
@@ -348,10 +348,23 @@ export function useLLMChat({
           }
 
           // Process tool calls one by one with progress updates
-          const toolResults: Array<{ name: string; result: ToolResult }> = []
+          const toolResults: Array<{ name: string; result: ToolResult; input: string }> = []
           for (let i = 0; i < toolCalls.length; i++) {
             const toolCall = toolCalls[i]
             const progressId = newProgress[i].id
+            
+            // Extract input/question from tool call arguments
+            const input = typeof toolCall.arguments.question === 'string'
+              ? toolCall.arguments.question
+              : typeof toolCall.arguments.input === 'string'
+                ? toolCall.arguments.input
+                : JSON.stringify(toolCall.arguments)
+            
+            // Format tool name for display (e.g., "analyze_data" -> "Analyze data")
+            const toolName = toolCall.name
+              .split('_')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ')
             
             // Mark as executing
             setToolCallProgress(prev => 
@@ -359,7 +372,21 @@ export function useLLMChat({
             )
             
             const result = await executeTool(toolCall.name, toolCall.arguments)
-            toolResults.push({ name: toolCall.name, result })
+            toolResults.push({ name: toolCall.name, result, input })
+            
+            // Extract result string for display
+            const resultString = typeof result.result === 'string' ? result.result : undefined
+            
+            // Create tool call part for display
+            toolCallParts.push(
+              createToolCallPart(
+                toolName,
+                input,
+                result.executedCode,
+                'python',
+                resultString
+              )
+            )
             
             // Mark as complete with result preview
             const resultPreview = result.chartPath 
@@ -393,9 +420,6 @@ export function useLLMChat({
             if (result.chartPath) {
               chartPaths.push(result.chartPath)
             }
-            if (result.executedCode) {
-              executedCodes.push(result.executedCode)
-            }
           }
 
           conversationHistory.push({
@@ -424,13 +448,11 @@ export function useLLMChat({
 
         const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
-        // Build message parts: code parts first (above response), then text, then images
+        // Build message parts: tool call parts first (above response), then text, then images
         const assistantParts: MessagePart[] = []
         
-        // Add code parts for each executed code (above the response)
-        for (const code of executedCodes) {
-          assistantParts.push(createCodePart(code))
-        }
+        // Add tool call parts (above the response)
+        assistantParts.push(...toolCallParts)
         
         // Add text response
         assistantParts.push(createTextPart(displayContent))
