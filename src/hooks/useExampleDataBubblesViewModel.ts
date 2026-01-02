@@ -30,6 +30,13 @@ export const EXAMPLE_FILES: ExampleFile[] = [
       'Red wine quality dataset with chemical properties (acidity, sugar, alcohol, etc.) and quality ratings',
     url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/winequality-red.csv',
   },
+  {
+    name: 'housedata',
+    label: 'housedata.csv',
+    description:
+      'House sales data with property details (bedrooms, bathrooms, square footage, location, price, year built, etc.)',
+    url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/housedata.csv',
+  },
 ]
 
 // Default dependencies for production
