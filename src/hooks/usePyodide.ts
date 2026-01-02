@@ -71,7 +71,7 @@ function generateId(): string {
 export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
   const { onLLMRequest } = options
   
-  const [status, setStatus] = useState<PyodideStatus>('idle')
+  const [status, setStatus] = useState<PyodideStatus>('loading')
   const [error, setError] = useState<string | null>(null)
   
   const workerRef = useRef<Worker | null>(null)
@@ -155,17 +155,17 @@ export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
     }
 
     // Start initialization
-    setStatus('loading')
     worker.postMessage({ type: 'init' })
 
     return () => {
       worker.terminate()
       workerRef.current = null
-      // Reject all pending requests
-      pendingRequestsRef.current.forEach((pending) => {
+      // Reject all pending requests - capture current ref value
+      const pendingRequests = pendingRequestsRef.current
+      pendingRequests.forEach((pending) => {
         pending.reject(new Error('Worker terminated'))
       })
-      pendingRequestsRef.current.clear()
+      pendingRequests.clear()
     }
   }, [])
 

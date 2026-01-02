@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { buildSystemPrompt, DataFrameInfo } from './systemPrompt'
+import { buildSystemPrompt } from './systemPrompt'
+import type { DataFrameInfo } from './systemPrompt'
 
 describe('buildSystemPrompt', () => {
   test('with empty dataframes mentions no data loaded', () => {

@@ -542,7 +542,7 @@ export function useLLMChat({
         isProcessingRef.current = false
       }
     },
-    [messages, streamLLMResponse, executeTool, engine]
+    [messages, streamLLMResponse, executeTool, engine, setMessages]
   )
 
   // Effect to process queued messages when system becomes ready (FIFO order)
@@ -573,7 +573,7 @@ export function useLLMChat({
         )
       )
     }
-  }, [loadingState])
+  }, [loadingState, setMessages])
 
   /**
    * Send a message and get a streaming response.
@@ -811,7 +811,7 @@ export function useLLMChat({
         currentAssistantIdRef.current = null
       }
     },
-    [messages, streamLLMResponse, executeTool, loadingState]
+    [messages, streamLLMResponse, executeTool, loadingState, setMessages]
   )
 
   const stop = useCallback(async () => {

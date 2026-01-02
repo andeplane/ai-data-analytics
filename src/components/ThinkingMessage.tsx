@@ -90,7 +90,7 @@ function ToolCallItem({ toolCall, index }: ToolCallItemProps) {
     >
       <div className="flex items-start gap-3">
         {/* Status indicator */}
-        <div className="flex-shrink-0 mt-0.5">
+        <div className="shrink-0 mt-0.5">
           {isPending && (
             <div className="w-4 h-4 rounded-full border-2 border-zinc-600" />
           )}
