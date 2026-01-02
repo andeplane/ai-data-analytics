@@ -22,6 +22,25 @@ import {
 } from '@llamaindex/chat-ui'
 import type { ChatHandler, Message, MessagePart } from '@llamaindex/chat-ui'
 
+/**
+ * Parse error message to provide user-friendly network error messages
+ */
+function parseNetworkError(error: string | null | undefined): string {
+  if (!error) return 'An error occurred'
+  
+  const errorLower = error.toLowerCase()
+  if (
+    errorLower.includes('aborterror') ||
+    errorLower.includes('failed to fetch') ||
+    errorLower.includes('networkerror') ||
+    errorLower.includes('network request failed')
+  ) {
+    return 'Network connection failed. Please check your internet and try again.'
+  }
+  
+  return error
+}
+
 function App() {
   const { engine, status: webllmStatus, progress: webllmProgress, progressText: webllmProgressText, elapsedTime, estimatedTimeRemaining, error: webllmError, loadModel } = useWebLLM()
   
@@ -46,8 +65,8 @@ function App() {
     })
   }, [])
   
-  const { pyodide, status: pyodideStatus } = usePyodide({ onLLMRequest: handleLLMRequest })
-  const { status: pandasStatus, loadPandasAI, loadDataframe, getDataframeInfo, removeDataframe } = usePandasAI(pyodide)
+  const { pyodide, status: pyodideStatus, error: pyodideError } = usePyodide({ onLLMRequest: handleLLMRequest })
+  const { status: pandasStatus, error: pandasError, loadPandasAI, retryPandasAI, loadDataframe, getDataframeInfo, removeDataframe } = usePandasAI(pyodide)
   
   // Dataframe management
   const { dataframes, hasQueuedFiles, handleFileLoad, removeDataframe: handleRemoveDataframe } = useDataframes({
@@ -76,7 +95,10 @@ function App() {
     pyodideStatus,
     pandasStatus,
     hasQueuedFiles,
-  }), [webllmStatus, webllmProgress, webllmProgressText, elapsedTime, estimatedTimeRemaining, pyodideStatus, pandasStatus, hasQueuedFiles])
+    pyodideError,
+    pandasError,
+    onRetryPandas: retryPandasAI,
+  }), [webllmStatus, webllmProgress, webllmProgressText, elapsedTime, estimatedTimeRemaining, pyodideStatus, pandasStatus, hasQueuedFiles, pyodideError, pandasError, retryPandasAI])
 
   // Chat handler using the LLM chat hook with web-llm engine
   const chat = useLLMChat({
@@ -152,6 +174,9 @@ function App() {
             pyodideStatus={loadingState.pyodideStatus}
             pandasStatus={loadingState.pandasStatus}
             hasQueuedFiles={loadingState.hasQueuedFiles}
+            pyodideError={loadingState.pyodideError}
+            pandasError={loadingState.pandasError}
+            onRetryPandas={loadingState.onRetryPandas}
           />
         </ChatMessage.Content>
       )
@@ -209,6 +234,21 @@ function App() {
           {webllmStatus === 'ready' && (
             <div className="mt-2 text-xs text-zinc-500">
               Model: {MODEL_ID.split('-').slice(0, 3).join('-')}
+            </div>
+          )}
+          
+          {/* Error details and retry for PandasAI */}
+          {pandasStatus === 'error' && (
+            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <div className="text-xs text-red-400 mb-2">
+                {parseNetworkError(pandasError)}
+              </div>
+              <button
+                onClick={retryPandasAI}
+                className="w-full text-xs bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-400 px-3 py-1.5 rounded transition-colors font-medium"
+              >
+                Retry
+              </button>
             </div>
           )}
           

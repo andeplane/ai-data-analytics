@@ -14,6 +14,7 @@ interface UsePandasAIReturn {
   status: PandasAIStatus
   error: string | null
   loadPandasAI: () => Promise<void>
+  retryPandasAI: () => Promise<void>
   chat: (dataframeName: string, question: string) => Promise<string>
   loadDataframe: (name: string, csvData: string) => Promise<void>
   getDataframeInfo: (name: string) => Promise<DataframeInfo>
@@ -58,6 +59,16 @@ print("PandasAI loaded successfully!")
       }
     },
     [pyodide]
+  )
+
+  const retryPandasAI = useCallback(
+    async () => {
+      // Reset to idle state, then call loadPandasAI
+      setStatus('idle')
+      setError(null)
+      await loadPandasAI()
+    },
+    [loadPandasAI]
   )
 
   const loadDataframe = useCallback(
@@ -147,6 +158,7 @@ if "${escapedName}" in dataframes:
     status,
     error,
     loadPandasAI,
+    retryPandasAI,
     chat,
     loadDataframe,
     getDataframeInfo,

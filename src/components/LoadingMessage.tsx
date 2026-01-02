@@ -8,6 +8,8 @@ interface LoadingStep {
   status: 'pending' | 'loading' | 'complete' | 'error'
   progress?: number
   detail?: string
+  error?: string
+  onRetry?: () => void
 }
 
 interface LoadingMessageProps {
@@ -19,6 +21,9 @@ interface LoadingMessageProps {
   pyodideStatus: PyodideStatus
   pandasStatus: PandasAIStatus
   hasQueuedFiles: boolean
+  pyodideError?: string | null
+  pandasError?: string | null
+  onRetryPandas?: () => void
 }
 
 function getStepStatus(
@@ -36,6 +41,25 @@ function getStepStatus(
   }
 }
 
+/**
+ * Parse error message to provide user-friendly network error messages
+ */
+function parseErrorMessage(error: string | null | undefined): string | undefined {
+  if (!error) return undefined
+  
+  const errorLower = error.toLowerCase()
+  if (
+    errorLower.includes('aborterror') ||
+    errorLower.includes('failed to fetch') ||
+    errorLower.includes('networkerror') ||
+    errorLower.includes('network request failed')
+  ) {
+    return 'Network connection failed. Please check your internet and try again.'
+  }
+  
+  return error
+}
+
 export function LoadingMessage({
   webllmStatus,
   webllmProgress,
@@ -45,6 +69,9 @@ export function LoadingMessage({
   pyodideStatus,
   pandasStatus,
   hasQueuedFiles,
+  pyodideError,
+  pandasError,
+  onRetryPandas,
 }: LoadingMessageProps) {
   // Build loading steps
   const steps: LoadingStep[] = [
@@ -68,6 +95,7 @@ export function LoadingMessage({
           : pyodideStatus === 'loading'
           ? 'Initializing Pyodide...'
           : undefined,
+      error: parseErrorMessage(pyodideError),
     },
     {
       label: 'Loading PandasAI',
@@ -81,6 +109,8 @@ export function LoadingMessage({
           : pandasStatus === 'loading'
           ? 'Installing packages...'
           : undefined,
+      error: parseErrorMessage(pandasError),
+      onRetry: pandasStatus === 'error' && onRetryPandas ? onRetryPandas : undefined,
     },
   ]
 
@@ -99,7 +129,7 @@ export function LoadingMessage({
     <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 max-w-md">
       <div className="flex items-center gap-3 mb-4">
         {!allComplete && (
-          <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full flex-shrink-0" />
+          <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full shrink-0" />
         )}
         <span className="text-sm text-zinc-300">
           {allComplete
@@ -111,7 +141,7 @@ export function LoadingMessage({
       <div className="space-y-3">
         {steps.map((step, index) => (
           <div key={index} className="flex items-start gap-3">
-            <div className="mt-0.5 flex-shrink-0">
+            <div className="mt-0.5 shrink-0">
               {step.status === 'pending' && (
                 <div className="w-4 h-4 rounded-full border-2 border-zinc-600" />
               )}
@@ -170,6 +200,21 @@ export function LoadingMessage({
               {step.detail && (
                 <div className="text-xs text-zinc-500 mt-0.5 truncate">
                   {step.detail}
+                </div>
+              )}
+              {step.error && (
+                <div className="mt-1.5">
+                  <div className="text-xs text-red-400 mb-1.5">
+                    {step.error}
+                  </div>
+                  {step.onRetry && (
+                    <button
+                      onClick={step.onRetry}
+                      className="text-xs bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-400 px-2.5 py-1 rounded transition-colors"
+                    >
+                      Retry
+                    </button>
+                  )}
                 </div>
               )}
               {/* Progress bar for LLM loading */}

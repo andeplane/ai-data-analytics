@@ -35,6 +35,9 @@ export interface SystemLoadingState {
   pyodideStatus: PyodideStatus
   pandasStatus: PandasAIStatus
   hasQueuedFiles: boolean
+  pyodideError?: string | null
+  pandasError?: string | null
+  onRetryPandas?: () => void
 }
 
 interface UseLLMChatOptions {
