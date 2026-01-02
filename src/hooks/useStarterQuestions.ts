@@ -40,10 +40,20 @@ function buildQuestionGenerationPrompt(dataframes: DataFrameInfo[]): string {
 
 ${dataframesList}
 
-Generate 4-5 short, specific questions a user might want to ask about this data. Questions should be actionable and relevant to the actual columns and data shown.
+You have access to pandas and matplotlib for analysis. Available capabilities:
+- Statistical analysis (correlations, distributions, outliers, aggregations)
+- Data visualization (histograms, scatter plots, bar charts, line plots, pie charts)
+- Data filtering, grouping, and transformations
+
+Generate 4-5 short, specific questions a user might want to ask about this data. Include a mix of:
+- Data exploration questions
+- Statistical analysis questions  
+- Visualization/plotting requests
+
+Questions should be actionable and relevant to the actual columns and data shown.
 
 Return a JSON object with a "questions" key containing an array of question strings.
-Example: {"questions": ["What is the average price?", "Show sales by category", "Create a histogram of ages"]}`
+Example: {"questions": ["What is the correlation between price and sales?", "Plot a histogram of ages", "Show average revenue by category"]}`
 }
 
 /**
