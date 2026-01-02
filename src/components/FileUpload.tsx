@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useFileUploadViewModel } from '../hooks/useFileUploadViewModel'
 
 interface FileUploadProps {
   onFileLoad: (name: string, content: string, type: 'csv' | 'json') => void
@@ -6,62 +6,13 @@ interface FileUploadProps {
 }
 
 export function FileUpload({ onFileLoad, disabled }: FileUploadProps) {
-  const [isDragging, setIsDragging] = useState(false)
-
-  const handleFile = useCallback(
-    (file: File) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const content = e.target?.result as string
-        const ext = file.name.split('.').pop()?.toLowerCase()
-        const type = ext === 'json' ? 'json' : 'csv'
-        let name = file.name.replace(/\.[^/.]+$/, '') // Remove extension
-        // Sanitize name: replace any non-alphanumeric characters with underscores
-        // This ensures safe SQL identifiers (e.g., "customers-10000" -> "customers_10000")
-        name = name.replace(/[^a-zA-Z0-9]/g, '_')
-        onFileLoad(name, content, type)
-      }
-      reader.readAsText(file)
-    },
-    [onFileLoad]
-  )
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      setIsDragging(false)
-      if (disabled) return
-
-      const files = Array.from(e.dataTransfer.files)
-      const validFile = files.find(
-        (f) => f.name.endsWith('.csv') || f.name.endsWith('.json')
-      )
-      if (validFile) {
-        handleFile(validFile)
-      }
-    },
-    [handleFile, disabled]
-  )
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
-
-  const handleDragLeave = useCallback(() => {
-    setIsDragging(false)
-  }, [])
-
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) {
-        handleFile(file)
-      }
-      e.target.value = '' // Reset input
-    },
-    [handleFile]
-  )
+  const {
+    isDragging,
+    handleDrop,
+    handleDragOver,
+    handleDragLeave,
+    handleInputChange,
+  } = useFileUploadViewModel(onFileLoad, disabled)
 
   return (
     <div
@@ -91,4 +42,3 @@ export function FileUpload({ onFileLoad, disabled }: FileUploadProps) {
     </div>
   )
 }
-

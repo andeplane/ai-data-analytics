@@ -1,45 +1,14 @@
-import { useState } from 'react'
-
-interface ExampleFile {
-  name: string
-  label: string
-  description: string
-  url: string
-}
-
-const EXAMPLE_FILES: ExampleFile[] = [
-  {
-    name: 'customers_10000',
-    label: 'customers_10000.csv',
-    description: '10,000 customer records with names, companies, locations, and contact info',
-    url: 'https://raw.githubusercontent.com/andeplane/ai-data-analytics/refs/heads/main/example-data/customers_10000.csv'
-  },
-  // More files can be added here later
-]
+import {
+  EXAMPLE_FILES,
+  useExampleDataBubblesViewModel,
+} from '../hooks/useExampleDataBubblesViewModel'
 
 interface ExampleDataBubblesProps {
   onFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
 }
 
 export function ExampleDataBubbles({ onFileLoad }: ExampleDataBubblesProps) {
-  const [loadingFile, setLoadingFile] = useState<string | null>(null)
-
-  const handleLoadExample = async (file: ExampleFile) => {
-    setLoadingFile(file.name)
-    try {
-      const response = await fetch(file.url)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${file.label}`)
-      }
-      const content = await response.text()
-      await onFileLoad(file.name, content, 'csv')
-    } catch (error) {
-      console.error('Failed to load example file:', error)
-      alert(`Failed to load example: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setLoadingFile(null)
-    }
-  }
+  const { loadingFile, handleLoadExample } = useExampleDataBubblesViewModel(onFileLoad)
 
   return (
     <div className="text-center">

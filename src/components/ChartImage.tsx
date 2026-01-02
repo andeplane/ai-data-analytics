@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useChartImageViewModel } from '../hooks/useChartImageViewModel'
 
 interface ChartImageProps {
   src: string
@@ -13,51 +13,20 @@ interface ChartImageProps {
  * - Provides a download button
  */
 export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [imageError, setImageError] = useState(false)
+  const {
+    isModalOpen,
+    imageError,
+    openModal,
+    closeModal,
+    download,
+    handleImageError,
+  } = useChartImageViewModel(src)
 
-  const handleClick = useCallback(() => {
-    setIsModalOpen(true)
-  }, [])
-
-  const handleClose = useCallback(() => {
-    setIsModalOpen(false)
-  }, [])
-
-  const handleDownload = useCallback(() => {
-    // Create a temporary link element to trigger download
-    const link = document.createElement('a')
-    link.href = src
-    link.download = `chart-${Date.now()}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }, [src])
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleClose()
-      }
-    },
-    [handleClose]
-  )
-
-  // Listen for ESC key globally when modal is open
-  useEffect(() => {
-    if (!isModalOpen) return
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleClose()
-      }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      closeModal()
     }
-
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [isModalOpen, handleClose])
+  }
 
   if (imageError) {
     return (
@@ -72,17 +41,17 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
       {/* Inline preview */}
       <div
         className={`w-fit bg-zinc-800 rounded-lg p-3 cursor-pointer hover:bg-zinc-700/80 transition-colors ${className ?? ''}`}
-        onClick={handleClick}
+        onClick={openModal}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+        onKeyDown={(e) => e.key === 'Enter' && openModal()}
       >
         <img
           src={src}
           alt={alt}
           className="max-w-full h-auto rounded max-h-[400px] object-contain"
           style={{ maxWidth: '600px' }}
-          onError={() => setImageError(true)}
+          onError={handleImageError}
         />
         <p className="text-xs text-zinc-500 mt-2 text-center">
           Click to view full size
@@ -93,7 +62,7 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
       {isModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          onClick={handleClose}
+          onClick={closeModal}
           onKeyDown={handleKeyDown}
           role="dialog"
           aria-modal="true"
@@ -105,7 +74,7 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
           >
             {/* Close button */}
             <button
-              onClick={handleClose}
+              onClick={closeModal}
               className="absolute top-2 right-2 z-10 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 rounded-full p-2 transition-colors"
               aria-label="Close"
             >
@@ -127,7 +96,7 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
 
             {/* Download button */}
             <button
-              onClick={handleDownload}
+              onClick={download}
               className="absolute top-2 right-14 z-10 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-300 rounded-full p-2 transition-colors"
               aria-label="Download"
             >
@@ -160,4 +129,3 @@ export function ChartImage({ src, alt = 'Chart', className }: ChartImageProps) {
     </>
   )
 }
-
