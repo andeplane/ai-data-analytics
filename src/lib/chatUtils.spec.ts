@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ToolResult } from '../hooks/useToolExecutor'
 import {
+  createCodePart,
   createImagePart,
   createLoadingPart,
   createTextPart,
@@ -301,6 +302,44 @@ describe(createLoadingPart.name, () => {
     expect(part.loadingState.webllmProgress).toBe(50)
     expect(part.loadingState.webllmProgressText).toBe('Loading model...')
     expect(part.loadingState.pyodideStatus).toBe('ready')
+  })
+})
+
+describe(createCodePart.name, () => {
+  it('should create data-code part with correct type', () => {
+    const code = 'print("Hello, World!")'
+    const part = createCodePart(code)
+
+    expect(part.type).toBe('data-code')
+    expect(part).toHaveProperty('data')
+  })
+
+  it('should set code in data property', () => {
+    const code = 'import pandas as pd\ndf = pd.read_csv("data.csv")'
+    const part = createCodePart(code) as { type: string; data: { code: string; language: string } }
+
+    expect(part.data.code).toBe(code)
+  })
+
+  it('should set language to python', () => {
+    const part = createCodePart('code') as { type: string; data: { language: string } }
+
+    expect(part.data.language).toBe('python')
+  })
+
+  it('should handle empty string', () => {
+    const part = createCodePart('')
+
+    expect(part.type).toBe('data-code')
+    const dataPart = part as { type: string; data: { code: string } }
+    expect(dataPart.data.code).toBe('')
+  })
+
+  it('should preserve multiline code', () => {
+    const code = 'def fib(n):\n    if n <= 1:\n        return n\n    return fib(n-1) + fib(n-2)'
+    const part = createCodePart(code) as { type: string; data: { code: string } }
+
+    expect(part.data.code).toBe(code)
   })
 })
 

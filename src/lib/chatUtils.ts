@@ -144,6 +144,20 @@ export function createLoadingPart(loadingState: SystemLoadingState): MessagePart
 }
 
 /**
+ * Create a code message part for displaying executed Python code.
+ * Uses a custom 'data-code' type that can be handled by the UI.
+ */
+export function createCodePart(code: string): MessagePart {
+  return {
+    type: 'data-code',
+    data: {
+      code,
+      language: 'python',
+    },
+  } as MessagePart
+}
+
+/**
  * Check if system is ready to process messages.
  * All components must be ready and no files pending upload.
  */

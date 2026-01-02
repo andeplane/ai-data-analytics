@@ -12,6 +12,7 @@ export interface ToolResult {
   success: boolean
   result: string
   chartPath?: string
+  executedCode?: string
 }
 
 interface UseToolExecutorOptions {

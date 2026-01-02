@@ -44,6 +44,14 @@ else:
             agent = Agent(raw_dfs, config={"llm": llm})
             result = agent.chat(question)
         
+        # Extract executed code from PandasAI response
+        executed_code = None
+        if hasattr(result, 'last_code_executed') and result.last_code_executed:
+            executed_code = result.last_code_executed
+        elif hasattr(result, 'last_code_generated') and result.last_code_generated:
+            # Fallback to last_code_generated if last_code_executed is not available
+            executed_code = result.last_code_generated
+        
         # Check if result is a path to a chart
         result_str = str(result)
         chart_path = None
@@ -77,7 +85,8 @@ else:
         result_json = json.dumps({
             "success": True,
             "result": result_str,
-            "chartPath": chart_data_url
+            "chartPath": chart_data_url,
+            "executedCode": executed_code
         })
     except Exception as e:
         import traceback
@@ -102,6 +111,7 @@ export function parseToolExecutionResult(resultJson: string): ToolResult {
     success: parsed.success ?? false,
     result: parsed.result ?? '',
     chartPath: parsed.chartPath || undefined,
+    executedCode: parsed.executedCode || undefined,
   }
 }
 

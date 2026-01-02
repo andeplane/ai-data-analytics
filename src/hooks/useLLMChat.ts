@@ -14,6 +14,7 @@ import {
   generateId,
   createTextPart,
   createImagePart,
+  createCodePart,
   createLoadingPart,
   isSystemReady,
   type SystemLoadingState,
@@ -283,6 +284,9 @@ export function useLLMChat({
         // Track chart paths from tool results
         const chartPaths: string[] = []
         
+        // Track executed code from tool results
+        const executedCodes: string[] = []
+        
         // Track if we've shown the assistant message yet
         let assistantMessageShown = false
 
@@ -389,6 +393,9 @@ export function useLLMChat({
             if (result.chartPath) {
               chartPaths.push(result.chartPath)
             }
+            if (result.executedCode) {
+              executedCodes.push(result.executedCode)
+            }
           }
 
           conversationHistory.push({
@@ -417,7 +424,18 @@ export function useLLMChat({
 
         const displayContent = removeToolCallsFromContent(responseContent) || responseContent
 
-        const assistantParts: MessagePart[] = [createTextPart(displayContent)]
+        // Build message parts: code parts first (above response), then text, then images
+        const assistantParts: MessagePart[] = []
+        
+        // Add code parts for each executed code (above the response)
+        for (const code of executedCodes) {
+          assistantParts.push(createCodePart(code))
+        }
+        
+        // Add text response
+        assistantParts.push(createTextPart(displayContent))
+        
+        // Add chart images
         for (const chartPath of chartPaths) {
           assistantParts.push(createImagePart(chartPath))
         }
