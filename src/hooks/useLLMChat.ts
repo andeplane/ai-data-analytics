@@ -193,17 +193,16 @@ export function useLLMChat({
   const [input, setInput] = useState('')
   const [toolCallProgress, setToolCallProgress] = useState<ToolCallProgress[]>([])
   
-  // Wrap setMessages to automatically clear tool progress when conversation is reset
   const setMessages = useCallback((newMessages: Message[] | ((prev: Message[]) => Message[])) => {
-    setMessagesInternal((prev) => {
-      const result = typeof newMessages === 'function' ? newMessages(prev) : newMessages
-      // If messages are being cleared, also clear tool progress
-      if (result.length === 0) {
-        setToolCallProgress([])
-      }
-      return result
-    })
+    setMessagesInternal(newMessages)
   }, [])
+  
+  // Clear tool progress when messages are cleared
+  useEffect(() => {
+    if (messages.length === 0 && toolCallProgress.length > 0) {
+      setToolCallProgress([])
+    }
+  }, [messages.length, toolCallProgress.length])
   
   // Map internal status to external ChatHandler-compatible status
   const status: ChatStatus = internalStatus === 'awaiting-deps' ? 'streaming' : internalStatus
@@ -306,22 +305,32 @@ export function useLLMChat({
   // Ref to store sendMessage callback to avoid dependency issues in effects
   const sendMessageRef = useRef<((msg: Message) => Promise<void>) | null>(null)
 
+  // Keep a ref with latest loading state for reading current values
+  const loadingStateRef = useRef(loadingState)
+  
+  // Update ref whenever loadingState changes
+  useEffect(() => {
+    loadingStateRef.current = loadingState
+  }, [loadingState])
+
   // Effect to update loading messages with current loading state (for all queued messages)
   useEffect(() => {
-    if (queuedMessagesRef.current.length > 0 && !isSystemReady(loadingState) && !isProcessingRef.current) {
-      // Get all loading IDs from the queue
-      const queuedLoadingIds = new Set(queuedMessagesRef.current.map(q => q.loadingId))
-      
-      // Update all loading messages with current loading state
-      setMessages((prev) =>
-        prev.map((m) =>
-          queuedLoadingIds.has(m.id)
-            ? { ...m, parts: [createLoadingPart(loadingState)] }
-            : m
-        )
-      )
+    if (queuedMessagesRef.current.length === 0 || isSystemReady(loadingState) || isProcessingRef.current) {
+      return
     }
-  }, [loadingState, setMessages])
+    
+    const queuedLoadingIds = new Set(queuedMessagesRef.current.map(q => q.loadingId))
+    
+    setMessages((prev) =>
+      prev.map((m) =>
+        queuedLoadingIds.has(m.id)
+          ? { ...m, parts: [createLoadingPart(loadingStateRef.current)] }
+          : m
+      )
+    )
+    // Only depend on status fields, not progress/elapsed time
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingState.webllmStatus, loadingState.pandasStatus, loadingState.pyodideStatus, loadingState.hasQueuedFiles, setMessages])
 
   /**
    * Send a message and get a streaming response.
