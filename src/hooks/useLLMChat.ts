@@ -5,6 +5,7 @@ import { useToolExecutor, type ToolResult } from './useToolExecutor'
 import type { Message, MessagePart, ChatHandler } from '@llamaindex/chat-ui'
 import { callLLMStreaming, type LLMCallOptions } from '../lib/llmCaller'
 import type { PyodideProxy } from './usePyodide'
+import { useAnalytics } from '../lib/analytics'
 import {
   parseToolCalls,
   hasToolCalls,
@@ -73,10 +74,14 @@ export function useLLMChat({
     setMessagesInternal(newMessages)
   }, [])
   
-  // Clear tool progress when messages are cleared
+  // Clear tool progress and reset token counter when messages are cleared
   useEffect(() => {
-    if (messages.length === 0 && toolCallProgress.length > 0) {
-      setToolCallProgress([])
+    if (messages.length === 0) {
+      if (toolCallProgress.length > 0) {
+        setToolCallProgress([])
+      }
+      // Reset cumulative token count when conversation is cleared
+      totalTokensRef.current = 0
     }
   }, [messages.length, toolCallProgress.length])
   
@@ -84,6 +89,10 @@ export function useLLMChat({
   const status: ChatStatus = internalStatus === 'awaiting-deps' ? 'streaming' : internalStatus
 
   const { executeTool } = useToolExecutor({ pyodide })
+  const analytics = useAnalytics()
+  
+  // Track cumulative tokens across the conversation
+  const totalTokensRef = useRef(0)
   
   // Ref to track current assistant message ID for streaming updates
   const currentAssistantIdRef = useRef<string | null>(null)
@@ -110,9 +119,15 @@ export function useLLMChat({
         temperature: 0.7,
         max_tokens: 2000,
         source: 'chat-ui',
+        onMetrics: (metrics) => {
+          // Track LLM call metrics
+          analytics.trackLLMCall(metrics)
+          // Update cumulative token count
+          totalTokensRef.current += metrics.totalTokens
+        },
       }
     },
-    [dataframes]
+    [dataframes, analytics]
   )
 
   /**
@@ -371,7 +386,19 @@ export function useLLMChat({
               prev.map(p => p.id === progressId ? { ...p, status: 'executing' as const } : p)
             )
             
+            // Track tool call execution time
+            const toolCallStartTime = Date.now()
             const result = await executeTool(toolCall.name, toolCall.arguments)
+            const toolCallDuration = Date.now() - toolCallStartTime
+            
+            // Track tool call metrics
+            analytics.trackToolCall({
+              toolName: toolCall.name,
+              inputArguments: toolCall.arguments,
+              durationMs: toolCallDuration,
+              success: result.success,
+            })
+            
             toolResults.push({ name: toolCall.name, result, input })
             
             // Extract result string for display
@@ -488,6 +515,17 @@ export function useLLMChat({
           ])
         }
 
+        // Track chat message metrics
+        const finalMessages = assistantMessageShown
+          ? messages.map((m) => (m.id === assistantId ? { ...m, parts: assistantParts } : m))
+          : [...messages, { id: assistantId, role: 'assistant' as const, parts: assistantParts }]
+        
+        analytics.trackChatMessage({
+          threadLength: finalMessages.length,
+          totalTokensSoFar: totalTokensRef.current,
+          hasImages: chartPaths.length > 0,
+        })
+
         setInternalStatus('ready')
         setToolCallProgress([]) // Clear tool progress
         currentAssistantIdRef.current = null
@@ -508,7 +546,7 @@ export function useLLMChat({
         currentAssistantIdRef.current = null
       }
     },
-    [messages, streamLLMResponse, executeTool, loadingState, setMessages]
+    [messages, streamLLMResponse, executeTool, loadingState, setMessages, analytics]
   )
   
   // Keep the ref updated with the latest callback

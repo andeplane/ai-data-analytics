@@ -15,6 +15,7 @@ import { LoadingMessage } from './components/LoadingMessage'
 import { ThinkingMessage } from './components/ThinkingMessage'
 import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
+import { useAnalytics } from './lib/analytics'
 import {
   ChatSection,
   ChatMessages,
@@ -43,6 +44,7 @@ function parseNetworkError(error: string | null | undefined): string {
 }
 
 function App() {
+  const analytics = useAnalytics()
   const { engine, status: webllmStatus, progress: webllmProgress, progressText: webllmProgressText, elapsedTime, estimatedTimeRemaining, error: webllmError, loadModel } = useWebLLM()
   
   // Keep a ref to the engine so the LLM handler can access it
@@ -77,6 +79,17 @@ function App() {
     getDataframeInfo,
     removeDataframe,
   })
+  
+  // Wrapper for file load that passes user_upload source
+  const handleUserFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
+    await handleFileLoad(name, content, type, 'user_upload')
+  }, [handleFileLoad])
+  
+  // Wrapper for remove dataframe that tracks analytics
+  const handleRemoveDataframeWithTracking = useCallback(async (name: string) => {
+    analytics.trackRemoveDataframe(name)
+    await handleRemoveDataframe(name)
+  }, [handleRemoveDataframe, analytics])
 
   // Convert dataframes to DataFrameInfo for the chat hook
   const dataframeInfos: DataFrameInfo[] = dataframes.map((df) => ({
@@ -257,7 +270,10 @@ function App() {
           
           {/* New Conversation button */}
           <button
-            onClick={() => chat.setMessages?.([])}
+            onClick={() => {
+              analytics.trackNewConversation()
+              chat.setMessages?.([])
+            }}
             className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 transition-colors"
           >
             + New Conversation
@@ -273,14 +289,14 @@ function App() {
             dataframes={dataframes} 
             activeDataframe={null}
             onSelect={() => {}}
-            onRemove={handleRemoveDataframe}
+            onRemove={handleRemoveDataframeWithTracking}
           />
         </div>
 
         {/* File Upload */}
         <div className="p-4 border-t border-zinc-800">
           <FileUpload 
-            onFileLoad={handleFileLoad}
+            onFileLoad={handleUserFileLoad}
           />
         </div>
       </aside>
@@ -330,6 +346,10 @@ function App() {
                   questions={starterQuestions}
                   isLoading={starterQuestionsLoading}
                   onSelect={(question) => {
+                    analytics.trackExampleClick({
+                      type: 'example_question',
+                      value: question,
+                    })
                     chat.sendMessage({
                       id: generateId(),
                       role: 'user',

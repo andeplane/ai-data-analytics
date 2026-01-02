@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { PyodideProxy } from './usePyodide'
+import { useAnalytics } from '../lib/analytics'
 
 export interface DataFrame {
   name: string
@@ -12,6 +13,7 @@ interface QueuedFile {
   name: string
   content: string
   type: 'csv' | 'json'
+  source: 'user_upload' | 'example_data'
 }
 
 interface UseDataframesOptions {
@@ -25,7 +27,7 @@ interface UseDataframesOptions {
 interface UseDataframesResult {
   dataframes: DataFrame[]
   hasQueuedFiles: boolean
-  handleFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
+  handleFileLoad: (name: string, content: string, type: 'csv' | 'json', source?: 'user_upload' | 'example_data') => Promise<void>
   removeDataframe: (name: string) => Promise<void>
 }
 
@@ -57,11 +59,12 @@ export function useDataframes({
 }: UseDataframesOptions): UseDataframesResult {
   const [dataframes, setDataframes] = useState<DataFrame[]>([])
   const [queuedFiles, setQueuedFiles] = useState<QueuedFile[]>([])
+  const analytics = useAnalytics()
 
   /**
    * Process a file and load it into PandasAI
    */
-  const processFile = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
+  const processFile = useCallback(async (name: string, content: string, type: 'csv' | 'json', source: 'user_upload' | 'example_data' = 'user_upload') => {
     // Convert JSON to CSV if needed
     const csvContent = type === 'json' ? jsonToCsv(content) : content
 
@@ -69,6 +72,15 @@ export function useDataframes({
     
     // Get dataframe info
     const info = await getDataframeInfo(name)
+    
+    // Track file upload metrics
+    analytics.trackFileUpload({
+      fileType: type,
+      numRows: info.rows,
+      numColumns: info.columns.length,
+      fileName: name,
+      source,
+    })
     
     setDataframes(prev => {
       const existing = prev.findIndex(df => df.name === name)
@@ -80,15 +92,15 @@ export function useDataframes({
       }
       return [...prev, newDf]
     })
-  }, [loadDataframe, getDataframeInfo])
+  }, [loadDataframe, getDataframeInfo, analytics])
 
   /**
    * Handle file upload - queues if PandasAI not ready, processes immediately otherwise
    */
-  const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
+  const handleFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json', source: 'user_upload' | 'example_data' = 'user_upload') => {
     // If PandasAI is not ready, queue the file
     if (pandasStatus !== 'ready') {
-      setQueuedFiles(prev => [...prev, { name, content, type }])
+      setQueuedFiles(prev => [...prev, { name, content, type, source }])
       // Add placeholder to dataframes list (will be updated when processed)
       setDataframes(prev => {
         const existing = prev.findIndex(df => df.name === name)
@@ -100,7 +112,7 @@ export function useDataframes({
     }
 
     try {
-      await processFile(name, content, type)
+      await processFile(name, content, type, source)
     } catch (err) {
       console.error('Failed to load file:', err)
       alert(`Failed to load file: ${err instanceof Error ? err.message : String(err)}`)
@@ -115,7 +127,7 @@ export function useDataframes({
         setQueuedFiles([])
         for (const file of filesToProcess) {
           try {
-            await processFile(file.name, file.content, file.type)
+            await processFile(file.name, file.content, file.type, file.source)
           } catch (err) {
             console.error('Failed to process queued file:', err)
           }

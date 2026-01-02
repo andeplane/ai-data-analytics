@@ -1,5 +1,6 @@
 import type { MLCEngineInterface } from '@mlc-ai/web-llm'
 import type { ChatCompletionMessageParam, ResponseFormat } from '@mlc-ai/web-llm'
+import type { LLMCallMetrics } from './analytics'
 
 export interface LLMCallOptions {
   messages: ChatCompletionMessageParam[]
@@ -7,6 +8,7 @@ export interface LLMCallOptions {
   max_tokens?: number
   response_format?: ResponseFormat
   source?: string // Where the call is coming from (e.g., "chat-ui", "pandasai")
+  onMetrics?: (metrics: LLMCallMetrics) => void // Optional analytics callback
 }
 
 /**
@@ -80,6 +82,17 @@ export async function callLLM(
     }
     console.groupEnd()
 
+    // Track metrics if callback provided
+    if (options.onMetrics && response.usage) {
+      options.onMetrics({
+        inputTokens: response.usage.prompt_tokens || 0,
+        outputTokens: response.usage.completion_tokens || 0,
+        totalTokens: response.usage.total_tokens || 0,
+        durationMs: duration,
+        source,
+      })
+    }
+
     return content
   } catch (error) {
     const duration = Date.now() - startTime
@@ -136,6 +149,7 @@ export async function* callLLMStreaming(
   console.groupEnd()
 
   const startTime = Date.now()
+  let firstTokenTime: number | undefined = undefined
 
   try {
     const stream = await engine.chat.completions.create({
@@ -146,8 +160,21 @@ export async function* callLLMStreaming(
     })
 
     let content = ''
+    let inputTokens = 0
+    let outputTokens = 0
     
     for await (const chunk of stream) {
+      // Track time to first token
+      if (firstTokenTime === undefined && chunk.choices[0]?.delta?.content) {
+        firstTokenTime = Date.now() - startTime
+      }
+      
+      // Track token usage if available
+      if (chunk.usage) {
+        inputTokens = chunk.usage.prompt_tokens || 0
+        outputTokens = chunk.usage.completion_tokens || 0
+      }
+      
       const delta = chunk.choices[0]?.delta?.content || ''
       if (delta) {
         content += delta
@@ -166,7 +193,22 @@ export async function* callLLMStreaming(
     console.log('Full content:', content)
     console.log(`Response length: ${content.length} characters`)
     console.log(`Duration: ${duration}ms`)
+    if (inputTokens > 0 || outputTokens > 0) {
+      console.log(`Tokens: ${inputTokens} prompt + ${outputTokens} completion = ${inputTokens + outputTokens} total`)
+    }
     console.groupEnd()
+
+    // Track metrics if callback provided
+    if (options.onMetrics && (inputTokens > 0 || outputTokens > 0)) {
+      options.onMetrics({
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        durationMs: duration,
+        timeToFirstTokenMs: firstTokenTime,
+        source,
+      })
+    }
 
     return content
   } catch (error) {

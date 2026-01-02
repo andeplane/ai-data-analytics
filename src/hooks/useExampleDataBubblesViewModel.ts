@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useState } from 'react'
+import { useAnalytics } from '../lib/analytics'
 
 export interface ExampleFile {
   name: string
@@ -38,17 +39,24 @@ export interface ExampleDataBubblesViewModel {
 }
 
 export function useExampleDataBubblesViewModel(
-  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
+  onFileLoad: (name: string, content: string, type: 'csv' | 'json', source?: 'user_upload' | 'example_data') => Promise<void>
 ): ExampleDataBubblesViewModel {
   const { fetchFile } = useContext(UseExampleDataBubblesViewModelContext)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
+  const analytics = useAnalytics()
 
   const handleLoadExample = useCallback(
     async (file: ExampleFile) => {
       setLoadingFile(file.name)
       try {
+        // Track example click
+        analytics.trackExampleClick({
+          type: 'example_data',
+          value: file.name,
+        })
+        
         const content = await fetchFile(file.url)
-        await onFileLoad(file.name, content, 'csv')
+        await onFileLoad(file.name, content, 'csv', 'example_data')
       } catch (error) {
         console.error('Failed to load example file:', error)
         alert(
@@ -58,7 +66,7 @@ export function useExampleDataBubblesViewModel(
         setLoadingFile(null)
       }
     },
-    [fetchFile, onFileLoad]
+    [fetchFile, onFileLoad, analytics]
   )
 
   return {
