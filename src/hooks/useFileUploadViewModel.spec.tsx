@@ -19,7 +19,7 @@ describe(useFileUploadViewModel.name, () => {
     mockContext = {
       readFileAsText: vi.fn(() => Promise.resolve('file content')),
     }
-    mockOnFileLoad = vi.fn()
+    mockOnFileLoad = vi.fn(() => Promise.resolve())
     wrapper = createContextWrapper(mockContext)
   })
 

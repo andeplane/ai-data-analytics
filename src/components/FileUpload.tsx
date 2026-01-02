@@ -1,7 +1,7 @@
 import { useFileUploadViewModel } from '../hooks/useFileUploadViewModel'
 
 interface FileUploadProps {
-  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => void
+  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>
   disabled?: boolean
 }
 

@@ -18,11 +18,11 @@ export const UseFileUploadViewModelContext =
 
 export interface FileUploadViewModel {
   isDragging: boolean
-  handleFile: (file: File) => void
-  handleDrop: (e: React.DragEvent) => void
+  handleFile: (file: File) => Promise<void>
+  handleDrop: (e: React.DragEvent) => Promise<void>
   handleDragOver: (e: React.DragEvent) => void
   handleDragLeave: () => void
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>
 }
 
 /**
@@ -46,7 +46,7 @@ function getFileType(filename: string): 'csv' | 'json' {
 }
 
 export function useFileUploadViewModel(
-  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => void,
+  onFileLoad: (name: string, content: string, type: 'csv' | 'json') => Promise<void>,
   disabled?: boolean
 ): FileUploadViewModel {
   const { readFileAsText } = useContext(UseFileUploadViewModelContext)
@@ -57,13 +57,13 @@ export function useFileUploadViewModel(
       const content = await readFileAsText(file)
       const name = sanitizeFilename(file.name)
       const type = getFileType(file.name)
-      onFileLoad(name, content, type)
+      await onFileLoad(name, content, type)
     },
     [readFileAsText, onFileLoad]
   )
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault()
       setIsDragging(false)
       if (disabled) return
@@ -73,7 +73,7 @@ export function useFileUploadViewModel(
         (f) => f.name.endsWith('.csv') || f.name.endsWith('.json')
       )
       if (validFile) {
-        handleFile(validFile)
+        await handleFile(validFile)
       }
     },
     [handleFile, disabled]
@@ -89,10 +89,10 @@ export function useFileUploadViewModel(
   }, [])
 
   const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (file) {
-        handleFile(file)
+        await handleFile(file)
       }
       e.target.value = '' // Reset input
     },
