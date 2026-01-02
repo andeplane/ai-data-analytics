@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { usePyodide } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
-import { useWebLLM, MODEL_ID, formatTime } from './hooks/useWebLLM'
+import { useWebLLM } from './hooks/useWebLLM'
 import { useLLMChat, generateId, type SystemLoadingState } from './hooks/useLLMChat'
 import { useStarterQuestions } from './hooks/useStarterQuestions'
 import { useDataframes } from './hooks/useDataframes'
-import { FileUpload } from './components/FileUpload'
-import { DataFrameList } from './components/DataFrameList'
+import { Sidebar } from './components/Sidebar'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { ToolCallCollapsible } from './components/ToolCallCollapsible'
 import { StarterBubbles } from './components/StarterBubbles'
@@ -23,25 +22,6 @@ import {
   ChatMessage,
 } from '@llamaindex/chat-ui'
 import type { ChatHandler, Message, MessagePart } from '@llamaindex/chat-ui'
-
-/**
- * Parse error message to provide user-friendly network error messages
- */
-function parseNetworkError(error: string | null | undefined): string {
-  if (!error) return 'An error occurred'
-  
-  const errorLower = error.toLowerCase()
-  if (
-    errorLower.includes('aborterror') ||
-    errorLower.includes('failed to fetch') ||
-    errorLower.includes('networkerror') ||
-    errorLower.includes('network request failed')
-  ) {
-    return 'Network connection failed. Please check your internet and try again.'
-  }
-  
-  return error
-}
 
 function App() {
   const analytics = useAnalytics()
@@ -84,12 +64,6 @@ function App() {
   const handleUserFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
     await handleFileLoad(name, content, type, 'user_upload')
   }, [handleFileLoad])
-  
-  // Wrapper for remove dataframe that tracks analytics
-  const handleRemoveDataframeWithTracking = useCallback(async (name: string) => {
-    analytics.trackRemoveDataframe(name)
-    await handleRemoveDataframe(name)
-  }, [handleRemoveDataframe, analytics])
 
   // Convert dataframes to DataFrameInfo for the chat hook
   const dataframeInfos: DataFrameInfo[] = dataframes.map((df) => ({
@@ -152,18 +126,7 @@ function App() {
     }
   }, [pyodideStatus, pandasStatus, loadPandasAI])
 
-  // Compute overall system status
-  const getSystemStatus = () => {
-    if (webllmStatus === 'loading') return { text: 'Loading AI model...', color: 'bg-yellow-500 animate-pulse' }
-    if (webllmStatus === 'error') return { text: `Model error: ${webllmError}`, color: 'bg-red-500' }
-    if (pyodideStatus !== 'ready') return { text: 'Loading Python...', color: 'bg-yellow-500 animate-pulse' }
-    if (pandasStatus === 'loading') return { text: 'Loading PandasAI...', color: 'bg-yellow-500 animate-pulse' }
-    if (pandasStatus === 'error') return { text: 'PandasAI Error', color: 'bg-red-500' }
-    if (pandasStatus === 'ready' && webllmStatus === 'ready') return { text: 'Ready', color: 'bg-green-500' }
-    return { text: 'Initializing...', color: 'bg-yellow-500 animate-pulse' }
-  }
-
-  const systemStatus = getSystemStatus()
+  // Compute isSystemReady for the chat area
   const isSystemReady = pandasStatus === 'ready' && webllmStatus === 'ready' && !hasQueuedFiles
 
   // Helper to check if a message part is a loading part
@@ -210,96 +173,24 @@ function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
       {/* Sidebar */}
-      <aside className="w-72 border-r border-zinc-800 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-zinc-800">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <span className="text-2xl">📊</span>
-            Data Analyst
-          </h1>
-          <div className="mt-2 flex items-center gap-2 text-xs">
-            <span className={`w-2 h-2 rounded-full ${systemStatus.color}`} />
-            <span className="text-zinc-400">{systemStatus.text}</span>
-          </div>
-          
-          {/* Model loading progress */}
-          {webllmStatus === 'loading' && (
-            <div className="mt-3">
-              <div className="text-xs text-zinc-500 mb-1 truncate" title={webllmProgressText}>
-                {webllmProgressText}
-              </div>
-              <div className="w-full bg-zinc-800 rounded-full h-2">
-                <div 
-                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.round(webllmProgress * 100)}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                <span>{Math.round(webllmProgress * 100)}%</span>
-                <span>
-                  {formatTime(elapsedTime)}
-                  {estimatedTimeRemaining !== null && (
-                    <span className="text-zinc-600"> • ETA {formatTime(estimatedTimeRemaining)}</span>
-                  )}
-                </span>
-              </div>
-            </div>
-          )}
-          
-          {/* Model info when ready */}
-          {webllmStatus === 'ready' && (
-            <div className="mt-2 text-xs text-zinc-500">
-              Model: {MODEL_ID.split('-').slice(0, 3).join('-')}
-            </div>
-          )}
-          
-          {/* Error details and retry for PandasAI */}
-          {pandasStatus === 'error' && (
-            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <div className="text-xs text-red-400 mb-2">
-                {parseNetworkError(pandasError)}
-              </div>
-              <button
-                onClick={retryPandasAI}
-                className="w-full text-xs bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-400 px-3 py-1.5 rounded transition-colors font-medium"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-          
-          {/* New Conversation button */}
-          <button
-            onClick={() => {
-              analytics.trackNewConversation()
-              chat.setMessages?.([])
-            }}
-            className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 transition-colors"
-          >
-            + New Conversation
-          </button>
-        </div>
-
-        {/* DataFrames List */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
-            DataFrames ({dataframes.length})
-          </h2>
-          <DataFrameList 
-            dataframes={dataframes} 
-            activeDataframe={null}
-            onSelect={() => {}}
-            onRemove={handleRemoveDataframeWithTracking}
-          />
-        </div>
-
-        {/* File Upload */}
-        <div className="p-4 border-t border-zinc-800">
-          <FileUpload 
-            onFileLoad={handleUserFileLoad}
-          />
-        </div>
-      </aside>
+      <Sidebar
+        webllmStatus={webllmStatus}
+        webllmProgress={webllmProgress}
+        webllmProgressText={webllmProgressText}
+        elapsedTime={elapsedTime}
+        estimatedTimeRemaining={estimatedTimeRemaining}
+        webllmError={webllmError}
+        pyodideStatus={pyodideStatus}
+        pandasStatus={pandasStatus}
+        pandasError={pandasError}
+        hasQueuedFiles={hasQueuedFiles}
+        dataframes={dataframes.map(df => ({ name: df.name, rows: df.rows, columns: df.columns }))}
+        dataframesForList={dataframes}
+        setMessages={chat.setMessages}
+        retryPandasAI={retryPandasAI}
+        removeDataframe={handleRemoveDataframe}
+        onFileLoad={handleUserFileLoad}
+      />
 
       {/* Main Content - Chat Area using @llamaindex/chat-ui */}
       <main className="flex-1 flex flex-col h-screen">
