@@ -14,7 +14,7 @@ describe(useChartImageViewModel.name, () => {
   let mockContext: UseChartImageViewModelContextType
   let wrapper: ComponentType<{ children: ReactNode }>
   let capturedKeydownHandler: ((e: KeyboardEvent) => void) | null
-  let cleanupFn: ReturnType<typeof vi.fn>
+  let cleanupFn: () => void
 
   beforeEach(() => {
     capturedKeydownHandler = null

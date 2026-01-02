@@ -13,7 +13,7 @@ import {
 describe(useFileUploadViewModel.name, () => {
   let mockContext: UseFileUploadViewModelContextType
   let wrapper: ComponentType<{ children: ReactNode }>
-  let mockOnFileLoad: ReturnType<typeof vi.fn>
+  let mockOnFileLoad: Parameters<typeof useFileUploadViewModel>[0]
 
   beforeEach(() => {
     mockContext = {

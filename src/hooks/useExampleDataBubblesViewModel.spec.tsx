@@ -14,7 +14,7 @@ import {
 describe(useExampleDataBubblesViewModel.name, () => {
   let mockContext: UseExampleDataBubblesViewModelContextType
   let wrapper: ComponentType<{ children: ReactNode }>
-  let mockOnFileLoad: ReturnType<typeof vi.fn>
+  let mockOnFileLoad: Parameters<typeof useExampleDataBubblesViewModel>[0]
 
   beforeEach(() => {
     mockContext = {

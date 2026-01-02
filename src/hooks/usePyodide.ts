@@ -90,6 +90,9 @@ export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
       { type: 'module' }
     )
     workerRef.current = worker
+    
+    // Capture ref value at effect start for cleanup
+    const pendingRequests = pendingRequestsRef.current
 
     // Handle messages from worker
     worker.onmessage = async (event: MessageEvent<WorkerResponse>) => {
@@ -160,8 +163,7 @@ export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
     return () => {
       worker.terminate()
       workerRef.current = null
-      // Reject all pending requests - capture current ref value
-      const pendingRequests = pendingRequestsRef.current
+      // Reject all pending requests using captured ref value
       pendingRequests.forEach((pending) => {
         pending.reject(new Error('Worker terminated'))
       })
