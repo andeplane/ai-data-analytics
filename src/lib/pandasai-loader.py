@@ -105,6 +105,13 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 - Use standard SQL syntax compatible with DuckDB
 - For ordering: `SELECT * FROM table_name ORDER BY column_name DESC LIMIT 10`
 - Do NOT use SQL Server-specific syntax like `TOP`, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY`
+
+### CRITICAL: Escape single quotes in SQL string values
+Data values often contain apostrophes (single quotes). You MUST escape them by doubling the quote in SQL:
+- `'master's degree'` must be written as `'master''s degree'`
+- `'associate's degree'` must be written as `'associate''s degree'`
+- `'O'Brien'` must be written as `'O''Brien'`
+This applies to ALL string literals in WHERE, IN, LIKE clauses, etc.
 '''
 
     # Monkey-patch GeneratePythonCodeWithSQLPrompt to add DuckDB instructions
