@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useCallback, useRef } from 'react'
-import { usePyodide } from './hooks/usePyodide'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { usePyodide, type PandasAIProgressStage } from './hooks/usePyodide'
 import { usePandasAI } from './hooks/usePandasAI'
 import { useWebLLM } from './hooks/useWebLLM'
 import { useLLMChat, generateId, type SystemLoadingState } from './hooks/useLLMChat'
@@ -48,7 +48,23 @@ function App() {
     })
   }, [])
   
-  const { pyodide, status: pyodideStatus, error: pyodideError } = usePyodide({ onLLMRequest: handleLLMRequest })
+  // Track PandasAI execution progress for UI feedback
+  const [pandasProgress, setPandasProgress] = useState<{ stage: PandasAIProgressStage; detail?: string } | null>(null)
+  
+  // Progress handler for PandasAI - updates UI with current execution stage
+  const handleProgressUpdate = useCallback((stage: PandasAIProgressStage, detail?: string) => {
+    setPandasProgress({ stage, detail })
+    
+    // Clear progress after execution completes (slight delay to show final state)
+    if (stage === 'code_executed') {
+      setTimeout(() => setPandasProgress(null), 500)
+    }
+  }, [])
+  
+  const { pyodide, status: pyodideStatus, error: pyodideError } = usePyodide({ 
+    onLLMRequest: handleLLMRequest,
+    onProgressUpdate: handleProgressUpdate,
+  })
   const { status: pandasStatus, error: pandasError, loadPandasAI, retryPandasAI, loadDataframe, getDataframeInfo, removeDataframe } = usePandasAI(pyodide)
   
   // Dataframe management
@@ -211,7 +227,10 @@ function App() {
             </ChatMessages.List>
             
             <ChatMessages.Loading className="p-4">
-              <ThinkingMessage toolCallProgress={chat.toolCallProgress} />
+              <ThinkingMessage 
+                toolCallProgress={chat.toolCallProgress} 
+                pandasProgress={pandasProgress}
+              />
             </ChatMessages.Loading>
             
             <ChatMessages.Empty className="flex-1 flex flex-col items-center justify-center h-full text-zinc-500">

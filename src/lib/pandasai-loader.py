@@ -206,6 +206,145 @@ This applies to ALL string literals in WHERE, IN, LIKE clauses, etc.
     pandasai.config.set({"llm": llm})
     print("Configured LLM globally via pandasai.config")
 
+    # Monkey-patch Agent methods to emit progress events for UI feedback
+    # This allows the frontend to show "Generating code...", "Running code...", etc.
+    from pandasai import Agent
+    from js import postProgress
+    
+    # Store original methods
+    _original_generate_code = Agent.generate_code
+    _original_execute_code = Agent.execute_code
+    _original_regenerate_code_after_error = Agent._regenerate_code_after_error
+    
+    # Store last execution error traceback for progress reporting (closure variable)
+    last_execution_traceback = [None]  # Use list to allow modification in nested functions
+    
+    print("Setting up PandasAI progress event monkey-patches...")
+    
+    def patched_generate_code(self, query):
+        """Wrapped generate_code that emits progress events."""
+        postProgress("generating_code")
+        result = _original_generate_code(self, query)
+        postProgress("code_generated")
+        return result
+    
+    def patched_execute_code(self, code):
+        """Wrapped execute_code that emits progress events and captures tracebacks."""
+        import traceback
+        
+        last_execution_traceback[0] = None
+        
+        postProgress("executing_code")
+        try:
+            result = _original_execute_code(self, code)
+            postProgress("code_executed")
+            return result
+        except Exception as e:
+            # Capture the full traceback while we're still in the exception context
+            tb = traceback.format_exc()
+            last_execution_traceback[0] = tb
+            # Always log to console for debugging
+            print("=" * 60)
+            print("PANDASAI EXECUTION ERROR")
+            print("=" * 60)
+            print("Code attempted:")
+            print(code)
+            print("-" * 60)
+            print("Error traceback:")
+            print(tb)
+            print("=" * 60)
+            raise
+    
+    def patched_regenerate_code_after_error(self, code, error):
+        """Wrapped _regenerate_code_after_error that emits progress events."""
+        import traceback
+        import sys
+        
+        # Build error detail with both code attempted and full traceback
+        error_parts = []
+        
+        # Include the code that was attempted
+        if code:
+            error_parts.append("CODE:")
+            error_parts.append(code)
+            error_parts.append("")
+        
+        # Try EVERYTHING to get the traceback
+        traceback_str = None
+        debug_info = []
+        
+        # Method 1: Use captured traceback from execute_code
+        if last_execution_traceback[0]:
+            traceback_str = last_execution_traceback[0]
+            debug_info.append("Source: captured from execute_code")
+        
+        # Method 2: Try sys.exc_info() - might still be in exception context
+        if not traceback_str:
+            try:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                if exc_tb:
+                    traceback_str = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+                    debug_info.append("Source: sys.exc_info()")
+            except:
+                pass
+        
+        # Method 3: Try the error's __cause__ (CodeExecutionError chains original)
+        if not traceback_str and error:
+            try:
+                cause = getattr(error, '__cause__', None)
+                if cause:
+                    tb = getattr(cause, '__traceback__', None)
+                    if tb:
+                        traceback_str = ''.join(traceback.format_exception(type(cause), cause, tb))
+                        debug_info.append(f"Source: error.__cause__ ({type(cause).__name__})")
+            except Exception as e:
+                debug_info.append(f"__cause__ failed: {e}")
+        
+        # Method 4: Try error's own __traceback__
+        if not traceback_str and error:
+            try:
+                tb = getattr(error, '__traceback__', None)
+                if tb:
+                    traceback_str = ''.join(traceback.format_exception(type(error), error, tb))
+                    debug_info.append(f"Source: error.__traceback__ ({type(error).__name__})")
+            except Exception as e:
+                debug_info.append(f"__traceback__ failed: {e}")
+        
+        # Method 5: Just format the exception without traceback
+        if not traceback_str and error:
+            traceback_str = f"{type(error).__name__}: {str(error)}"
+            debug_info.append("Source: str(error) only - no traceback available")
+        
+        # Add error section
+        error_parts.append("ERROR:")
+        if traceback_str:
+            error_parts.append(traceback_str)
+        else:
+            error_parts.append("Unknown error")
+        
+        # Add debug info
+        if debug_info:
+            error_parts.append("")
+            error_parts.append(f"[Debug: {'; '.join(debug_info)}]")
+        
+        error_detail = "\n".join(error_parts)
+        
+        # Always log to console for debugging
+        print("=" * 60)
+        print("PANDASAI ERROR - REGENERATING CODE")
+        print("=" * 60)
+        print(error_detail)
+        print("=" * 60)
+        
+        postProgress("fixing_error", error_detail)
+        return _original_regenerate_code_after_error(self, code, error)
+    
+    # Apply monkey-patches
+    Agent.generate_code = patched_generate_code
+    Agent.execute_code = patched_execute_code
+    Agent._regenerate_code_after_error = patched_regenerate_code_after_error
+    print("Patched Agent methods with progress event emitters")
+
     # Dict to store dataframes by filename
     dataframes = {}
 

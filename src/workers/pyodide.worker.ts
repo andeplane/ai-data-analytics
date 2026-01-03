@@ -28,6 +28,15 @@ interface LLMResponseMessage {
 
 type WorkerMessage = InitMessage | RunPythonMessage | RunPythonAsyncMessage | LLMResponseMessage
 
+// Progress update stages from PandasAI
+export type PandasAIProgressStage =
+  | 'generating_code'
+  | 'code_generated'
+  | 'executing_code'
+  | 'code_executed'
+  | 'fixing_error'
+  | 'retrying'
+
 // Message types from worker to main thread
 interface StatusMessage {
   type: 'status'
@@ -49,7 +58,13 @@ interface LLMRequestMessage {
   prompt: string
 }
 
-type WorkerResponse = StatusMessage | ResultMessage | LLMRequestMessage
+interface ProgressUpdateMessage {
+  type: 'progressUpdate'
+  stage: PandasAIProgressStage
+  detail?: string
+}
+
+type WorkerResponse = StatusMessage | ResultMessage | LLMRequestMessage | ProgressUpdateMessage
 
 let pyodide: PyodideInterface | null = null
 
@@ -85,6 +100,20 @@ function createWebllmChat(): (prompt: string) => Promise<string> {
 }
 
 /**
+ * Create the postProgress function that will be exposed to Python.
+ * This sends progress updates to the main thread for UI feedback.
+ */
+function createPostProgress(): (stage: string, detail?: string) => void {
+  return (stage: string, detail?: string): void => {
+    postResponse({
+      type: 'progressUpdate',
+      stage: stage as PandasAIProgressStage,
+      detail,
+    })
+  }
+}
+
+/**
  * Initialize Pyodide and load required packages
  */
 async function initialize() {
@@ -110,6 +139,11 @@ matplotlib.use('Agg')
     // But since we're in a worker, we need to put it on self (the worker's global)
     const webllmChat = createWebllmChat()
     ;(self as unknown as Record<string, unknown>).webllmChat = webllmChat
+
+    // Expose postProgress for PandasAI progress updates
+    // Python can call it via: from js import postProgress
+    const postProgress = createPostProgress()
+    ;(self as unknown as Record<string, unknown>).postProgress = postProgress
 
     postResponse({ type: 'status', status: 'ready' })
   } catch (err) {

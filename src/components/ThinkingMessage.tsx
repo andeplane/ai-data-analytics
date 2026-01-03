@@ -1,15 +1,49 @@
 import type { ToolCallProgress } from '../hooks/useLLMChat'
+import type { PandasAIProgressStage } from '../hooks/usePyodide'
+
+interface PandasAIProgress {
+  stage: PandasAIProgressStage
+  detail?: string
+}
 
 interface ThinkingMessageProps {
   toolCallProgress: ToolCallProgress[]
+  pandasProgress?: PandasAIProgress | null
+}
+
+/**
+ * Get human-readable label for a PandasAI progress stage.
+ */
+function getPandasProgressLabel(stage: PandasAIProgressStage): string {
+  switch (stage) {
+    case 'generating_code':
+      return 'Generating Python code...'
+    case 'code_generated':
+      return 'Code generated'
+    case 'executing_code':
+      return 'Running code...'
+    case 'code_executed':
+      return 'Execution complete'
+    case 'fixing_error':
+      return 'Fixing error, retrying...'
+    case 'retrying':
+      return 'Retrying...'
+    default:
+      return 'Processing...'
+  }
 }
 
 /**
  * Cursor-style thinking message that shows tool call progress.
  * Displays each tool call as it executes with status indicators and result previews.
+ * Also shows PandasAI internal progress (generating code, executing, etc.)
  */
-export function ThinkingMessage({ toolCallProgress }: ThinkingMessageProps) {
+export function ThinkingMessage({ toolCallProgress, pandasProgress }: ThinkingMessageProps) {
   const hasToolCalls = toolCallProgress.length > 0
+  const executingToolCall = toolCallProgress.find(tc => tc.status === 'executing')
+  
+  // Show pandas progress only when a tool is actively executing
+  const showPandasProgress = executingToolCall && pandasProgress
   
   return (
     <div className="flex flex-col gap-3 max-w-lg">
@@ -42,9 +76,59 @@ export function ThinkingMessage({ toolCallProgress }: ThinkingMessageProps) {
               key={tc.id} 
               toolCall={tc} 
               index={index}
+              pandasProgress={tc.id === executingToolCall?.id ? pandasProgress : null}
             />
           ))}
         </div>
+      )}
+      
+      {/* Show pandas progress separately when no tool calls visible */}
+      {!hasToolCalls && pandasProgress && (
+        <PandasProgressIndicator progress={pandasProgress} />
+      )}
+    </div>
+  )
+}
+
+interface PandasProgressIndicatorProps {
+  progress: PandasAIProgress
+}
+
+/**
+ * Shows the current PandasAI execution stage with appropriate icon and label.
+ * When fixing errors, shows a tooltip with error details on hover.
+ */
+function PandasProgressIndicator({ progress }: PandasProgressIndicatorProps) {
+  const label = getPandasProgressLabel(progress.stage)
+  const isError = progress.stage === 'fixing_error'
+  const hasErrorDetail = isError && progress.detail
+  
+  return (
+    <div className="flex items-center gap-2 text-xs text-zinc-500">
+      {isError ? (
+        <span className="text-amber-400">⚠</span>
+      ) : (
+        <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+      )}
+      {hasErrorDetail ? (
+        <div className="relative group">
+          <span className="text-amber-400 cursor-help underline decoration-dotted decoration-amber-400/50">
+            {label}
+          </span>
+          {/* Tooltip on hover - LARGE for full error visibility */}
+          <div className="fixed bottom-20 left-4 right-4 hidden group-hover:block z-50">
+            <div className="bg-zinc-900 border border-red-700 rounded-lg p-4 shadow-2xl max-w-4xl mx-auto">
+              <div className="text-sm font-bold text-red-400 mb-3">Error Details:</div>
+              <div className="text-sm text-zinc-200 font-mono whitespace-pre-wrap break-words max-h-[60vh] overflow-y-auto leading-relaxed bg-zinc-950 p-4 rounded border border-zinc-800">
+                {progress.detail}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <span className={isError ? 'text-amber-400' : ''}>
+          {label}
+        </span>
       )}
     </div>
   )
@@ -53,9 +137,10 @@ export function ThinkingMessage({ toolCallProgress }: ThinkingMessageProps) {
 interface ToolCallItemProps {
   toolCall: ToolCallProgress
   index: number
+  pandasProgress?: PandasAIProgress | null
 }
 
-function ToolCallItem({ toolCall, index }: ToolCallItemProps) {
+function ToolCallItem({ toolCall, index, pandasProgress }: ToolCallItemProps) {
   const isExecuting = toolCall.status === 'executing'
   const isComplete = toolCall.status === 'complete'
   const isError = toolCall.status === 'error'
@@ -152,6 +237,13 @@ function ToolCallItem({ toolCall, index }: ToolCallItemProps) {
             <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
               "{questionPreview}"
             </p>
+          )}
+          
+          {/* PandasAI internal progress (shown when executing) */}
+          {isExecuting && pandasProgress && (
+            <div className="mt-2">
+              <PandasProgressIndicator progress={pandasProgress} />
+            </div>
           )}
           
           {/* Result preview (shown when complete) */}
