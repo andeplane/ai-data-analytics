@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { ToolCallProgress } from '../hooks/useLLMChat'
 import type { PandasAIProgressStage } from '../hooks/usePyodide'
 
@@ -101,20 +101,35 @@ interface PandasProgressIndicatorProps {
  */
 function PandasProgressIndicator({ progress }: PandasProgressIndicatorProps) {
   const [copied, setCopied] = useState(false)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const label = getPandasProgressLabel(progress.stage)
   const isError = progress.stage === 'fixing_error'
   const isRetrying = progress.stage === 'retrying'
   const hasDetail = (isError || isRetrying) && progress.detail
   
+  // Clear timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
+  
   const handleCopy = async () => {
     if (!progress.detail) return
     try {
+      // Clear any existing timeout
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      
       // Copy header and detail text
       const headerText = isError ? 'Error Details:' : 'Retrying Details:'
       const textToCopy = `${headerText}\n\n${progress.detail}`
       await navigator.clipboard.writeText(textToCopy)
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy text:', err)
     }
