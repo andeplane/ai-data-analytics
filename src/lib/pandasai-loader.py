@@ -106,6 +106,20 @@ The database dialect is DuckDB. You MUST use DuckDB-compatible SQL syntax:
 - For ordering: `SELECT * FROM table_name ORDER BY column_name DESC LIMIT 10`
 - Do NOT use SQL Server-specific syntax like `TOP`, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY`
 
+### CRITICAL: SQL Column References - NEVER quote column names
+Column names in SQL must be written WITHOUT quotes (they are identifiers, not strings):
+- CORRECT: `SELECT total_sulfur_dioxide, quality FROM table_name`
+- WRONG: `SELECT 'total_sulfur_dioxide', 'quality' FROM table_name` (these become string literals!)
+
+For aggregate functions like CORR(), AVG(), SUM(), COUNT(), etc., column names must also be unquoted:
+- CORRECT: `CORR(total_sulfur_dioxide, quality)` → returns correlation coefficient
+- WRONG: `CORR('total_sulfur_dioxide', 'quality')` → ERROR: "No function matches corr(VARCHAR, VARCHAR)"
+
+Only quote VALUES in WHERE clauses, not column names:
+- CORRECT: `WHERE country = 'USA'` (value is quoted, column is not)
+- CORRECT: `WHERE total_sulfur_dioxide > 100` (column unquoted, number unquoted)
+- WRONG: `WHERE 'total_sulfur_dioxide' > 100` (column should not be quoted)
+
 ### CRITICAL: Escape single quotes in SQL string values
 Data values often contain apostrophes (single quotes). You MUST escape them by doubling the quote in SQL:
 - `'master's degree'` must be written as `'master''s degree'`
