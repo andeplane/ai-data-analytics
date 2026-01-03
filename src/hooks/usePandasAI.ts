@@ -85,9 +85,21 @@ print("PandasAI loaded successfully!")
       await pyodide.runPythonAsync(`
 import pandas as pd
 from io import StringIO
+import re
 
 csv_data = """${escapedCsv}"""
 _temp_df = pd.read_csv(StringIO(csv_data))
+
+# Sanitize column names for SQL compatibility
+def sanitize_col(col):
+    col = str(col).strip()                    # Strip whitespace
+    col = re.sub(r'[\\s\\-\\.]+', '_', col)      # Replace spaces, hyphens, dots with _
+    col = re.sub(r'[\\(\\)\\[\\]@#%&\\*\\/\\?\\!]+', '', col)  # Remove special chars
+    col = re.sub(r'_+', '_', col)             # Collapse multiple underscores
+    col = col.strip('_')                      # Remove leading/trailing underscores
+    return col
+
+_temp_df.columns = [sanitize_col(c) for c in _temp_df.columns]
 dataframes["${escapedName}"] = DataFrame(_temp_df)
 print(f"Loaded dataframe '${escapedName}' with {len(_temp_df)} rows")
 `)
