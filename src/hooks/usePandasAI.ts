@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import type { PyodideProxy } from './usePyodide'
 import pandasaiLoaderCode from '../lib/pandasai-loader.py?raw'
-import { escapePythonString, escapeCsvForPython } from '../lib/pythonUtils'
+import { escapePythonString, sanitizeCsvColumns } from '../lib/pythonUtils'
 
 export type PandasAIStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -78,31 +78,20 @@ print("PandasAI loaded successfully!")
         throw new Error('PandasAI not ready')
       }
 
-      // Escape the CSV data for Python string
-      const escapedCsv = escapeCsvForPython(csvData)
+      // Sanitize column names in TypeScript (avoids Python code parsing overhead)
+      const sanitizedCsv = sanitizeCsvColumns(csvData)
+
+      // Write CSV to Pyodide's virtual filesystem
+      const filePath = `/data/${name}.csv`
+      await pyodide.writeFile(filePath, sanitizedCsv)
+
+      // Load with minimal Python - just read the file
       const escapedName = escapePythonString(name)
+      const escapedPath = escapePythonString(filePath)
 
       await pyodide.runPythonAsync(`
 import pandas as pd
-from io import StringIO
-import re
-
-csv_data = """${escapedCsv}"""
-_temp_df = pd.read_csv(StringIO(csv_data))
-
-# Sanitize column names for SQL compatibility
-def sanitize_col(col, index):
-    col = str(col).strip()                    # Strip whitespace
-    col = re.sub(r'[\\s\\-\\.]+', '_', col)      # Replace spaces, hyphens, dots with _
-    col = re.sub(r'[\\(\\)\\[\\]@#%&\\*\\/\\?\\!]+', '', col)  # Remove special chars
-    col = re.sub(r'_+', '_', col)             # Collapse multiple underscores
-    col = col.strip('_')                      # Remove leading/trailing underscores
-    # Handle empty column names (e.g., if column was only special chars)
-    if not col:
-        col = f'column_{index}'
-    return col
-
-_temp_df.columns = [sanitize_col(c, i) for i, c in enumerate(_temp_df.columns)]
+_temp_df = pd.read_csv("${escapedPath}")
 dataframes["${escapedName}"] = DataFrame(_temp_df)
 print(f"Loaded dataframe '${escapedName}' with {len(_temp_df)} rows")
 `)
