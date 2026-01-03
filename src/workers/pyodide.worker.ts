@@ -18,6 +18,13 @@ interface RunPythonAsyncMessage {
   code: string
 }
 
+interface WriteFileMessage {
+  type: 'writeFile'
+  id: string
+  path: string
+  content: string
+}
+
 interface LLMResponseMessage {
   type: 'llmResponse'
   id: string
@@ -26,7 +33,7 @@ interface LLMResponseMessage {
   error?: string
 }
 
-type WorkerMessage = InitMessage | RunPythonMessage | RunPythonAsyncMessage | LLMResponseMessage
+type WorkerMessage = InitMessage | RunPythonMessage | RunPythonAsyncMessage | WriteFileMessage | LLMResponseMessage
 
 // Progress update stages from PandasAI
 export type PandasAIProgressStage =
@@ -185,6 +192,42 @@ function runPython(id: string, code: string) {
 }
 
 /**
+ * Write a file to Pyodide's virtual filesystem
+ */
+function writeFile(id: string, path: string, content: string) {
+  if (!pyodide) {
+    postResponse({
+      type: 'result',
+      id,
+      success: false,
+      error: 'Pyodide not loaded',
+    })
+    return
+  }
+
+  try {
+    // Ensure parent directory exists
+    const dir = path.substring(0, path.lastIndexOf('/'))
+    if (dir) {
+      pyodide.FS.mkdirTree(dir)
+    }
+    pyodide.FS.writeFile(path, content)
+    postResponse({
+      type: 'result',
+      id,
+      success: true,
+    })
+  } catch (err) {
+    postResponse({
+      type: 'result',
+      id,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+/**
  * Run asynchronous Python code
  */
 async function runPythonAsync(id: string, code: string) {
@@ -248,6 +291,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
     case 'runPythonAsync':
       await runPythonAsync(message.id, message.code)
+      break
+
+    case 'writeFile':
+      writeFile(message.id, message.path, message.content)
       break
 
     case 'llmResponse':
