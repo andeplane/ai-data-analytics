@@ -12,6 +12,7 @@ import { StarterBubbles } from './components/StarterBubbles'
 import { ExampleDataBubbles } from './components/ExampleDataBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
 import { ThinkingMessage } from './components/ThinkingMessage'
+import { WelcomeModal } from './components/WelcomeModal'
 import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import { useAnalytics } from './lib/analytics'
@@ -191,9 +192,13 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
-      {/* Sidebar */}
-      <Sidebar
+    <>
+      {/* Welcome Modal - shown on first visit */}
+      <WelcomeModal />
+
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
+        {/* Sidebar */}
+        <Sidebar
         webllmStatus={webllmStatus}
         webllmProgress={webllmProgress}
         webllmProgressText={webllmProgressText}
@@ -296,6 +301,7 @@ function App() {
         </ChatSection>
       </main>
     </div>
+    </>
   )
 }
 
