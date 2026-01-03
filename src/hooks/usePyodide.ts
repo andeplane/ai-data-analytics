@@ -43,6 +43,7 @@ type WorkerResponse = StatusMessage | ResultMessage | LLMRequestMessage | Progre
 export interface PyodideProxy {
   runPython: (code: string) => Promise<unknown>
   runPythonAsync: (code: string) => Promise<unknown>
+  writeFile: (path: string, content: string) => Promise<void>
 }
 
 /**
@@ -75,6 +76,7 @@ interface UsePyodideReturn {
   error: string | null
   runPython: (code: string) => Promise<unknown>
   runPythonAsync: (code: string) => Promise<unknown>
+  writeFile: (path: string, content: string) => Promise<void>
 }
 
 // Pending promise resolvers keyed by request ID
@@ -230,10 +232,30 @@ export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
     [status]
   )
 
+  const writeFile = useCallback(
+    (path: string, content: string): Promise<void> => {
+      const worker = workerRef.current
+      if (!worker || status !== 'ready') {
+        return Promise.reject(new Error('Pyodide not loaded'))
+      }
+
+      const id = generateId()
+      return new Promise((resolve, reject) => {
+        pendingRequestsRef.current.set(id, {
+          resolve: () => resolve(),
+          reject,
+        })
+        worker.postMessage({ type: 'writeFile', id, path, content })
+      })
+    },
+    [status]
+  )
+
   // Create a proxy object that mimics the interface consumers expect
   const pyodideProxy: PyodideProxy | null = status === 'ready' ? {
     runPython,
     runPythonAsync,
+    writeFile,
   } : null
 
   return {
@@ -242,5 +264,6 @@ export function usePyodide(options: UsePyodideOptions = {}): UsePyodideReturn {
     error,
     runPython,
     runPythonAsync,
+    writeFile,
   }
 }
