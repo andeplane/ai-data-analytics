@@ -112,6 +112,96 @@ Data values often contain apostrophes (single quotes). You MUST escape them by d
 - `'associate's degree'` must be written as `'associate''s degree'`
 - `'O'Brien'` must be written as `'O''Brien'`
 This applies to ALL string literals in WHERE, IN, LIKE clauses, etc.
+
+### CRITICAL: Statistical Analysis - Use pandas/scikit-learn, NOT SQL GROUP BY
+For statistical analysis (correlation, regression, statistical tests, distributions), you MUST use pandas and scikit-learn methods, NOT SQL GROUP BY queries.
+
+**When to use SQL vs Python:**
+- **SQL**: Use for filtering, aggregation, grouping, sorting, joining tables
+- **Python (pandas/scikit-learn)**: Use for correlation analysis, linear regression, statistical tests, distribution analysis, machine learning
+
+**CORRECT: Correlation analysis with pandas**
+```python
+import pandas as pd
+
+# Fetch the data using SQL
+df = execute_sql_query("SELECT quality, alcohol FROM table_name")
+
+# Calculate correlation using pandas built-in method
+correlation = df['quality'].corr(df['alcohol'])
+
+# Or calculate full correlation matrix for all numeric columns
+corr_matrix = df.corr(numeric_only=True)
+
+result = {'type': 'dataframe', 'value': corr_matrix}
+```
+
+**WRONG: Using SQL GROUP BY for correlation**
+```python
+# DO NOT do this - SQL GROUP BY doesn't calculate correlation coefficients
+sql_query = "SELECT quality, alcohol, COUNT(*) as count FROM table_name GROUP BY quality, alcohol"
+df = execute_sql_query(sql_query)
+# This only counts occurrences, it doesn't measure correlation!
+```
+
+**CORRECT: Linear regression with scikit-learn**
+```python
+from sklearn.linear_model import LinearRegression
+import pandas as pd
+
+# Fetch the data using SQL
+df = execute_sql_query("SELECT feature1, feature2, target FROM table_name")
+
+# Prepare features and target
+X = df[['feature1', 'feature2']].values
+y = df['target'].values
+
+# Fit linear regression model
+model = LinearRegression().fit(X, y)
+
+# Get results
+r_squared = model.score(X, y)
+coefficients = model.coef_
+intercept = model.intercept_
+
+result = {'type': 'string', 'value': f'R² = {r_squared:.4f}, coefficients = {coefficients}, intercept = {intercept:.4f}'}
+```
+
+**CORRECT: Visualization with statistical analysis**
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Fetch the data using SQL
+df = execute_sql_query("SELECT alcohol, quality FROM table_name")
+
+# Create scatter plot
+plt.figure(figsize=(10, 6))
+plt.scatter(df['alcohol'], df['quality'], alpha=0.5)
+
+# Add trend line using numpy polyfit
+z = np.polyfit(df['alcohol'], df['quality'], 1)
+p = np.poly1d(z)
+plt.plot(df['alcohol'].sort_values(), p(df['alcohol'].sort_values()), 'r--', label=f'Trend line (y={z[0]:.2f}x+{z[1]:.2f})')
+
+# Calculate and display correlation
+correlation = df['alcohol'].corr(df['quality'])
+plt.title(f'Correlation between Alcohol and Quality: {correlation:.3f}')
+plt.xlabel('Alcohol')
+plt.ylabel('Quality')
+plt.legend()
+plt.savefig('exports/charts/chart.png')
+
+result = {'type': 'plot', 'value': 'exports/charts/chart.png'}
+```
+
+**Key principles:**
+1. Use SQL to fetch/aggregate data: `execute_sql_query("SELECT columns FROM table WHERE conditions")`
+2. Use pandas methods for statistical operations: `.corr()`, `.describe()`, `.value_counts()`, etc.
+3. Use scikit-learn for machine learning: `LinearRegression()`, `LogisticRegression()`, etc.
+4. Use scipy.stats for statistical tests: `pearsonr()`, `spearmanr()`, `ttest_ind()`, etc.
+5. Always combine: Fetch data with SQL, then analyze with Python statistical libraries
 '''
 
     # Monkey-patch GeneratePythonCodeWithSQLPrompt to add DuckDB instructions
