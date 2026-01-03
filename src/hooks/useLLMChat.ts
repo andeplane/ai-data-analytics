@@ -8,6 +8,7 @@ import type { PyodideProxy } from './usePyodide'
 import { useAnalytics } from '../lib/analytics'
 import {
   parseToolCalls,
+  deduplicateToolCalls,
   hasToolCalls,
   removeToolCallsFromContent,
   sanitizeToolResultForLLM,
@@ -344,7 +345,8 @@ export function useLLMChat({
         while (isToolCall && maxToolRounds > 0) {
           maxToolRounds--
 
-          const toolCalls = parseToolCalls(responseContent)
+          const parsedToolCalls = parseToolCalls(responseContent)
+          const toolCalls = deduplicateToolCalls(parsedToolCalls)
           if (toolCalls.length === 0) break
 
           // Add tool calls to progress with pending status

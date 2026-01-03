@@ -72,6 +72,36 @@ export function parseToolCalls(content: string): ParsedToolCall[] {
 }
 
 /**
+ * Remove duplicate tool calls from an array.
+ * Tool calls are considered duplicates if they have the same name and identical arguments.
+ * Keeps the first occurrence of each duplicate.
+ */
+export function deduplicateToolCalls(toolCalls: ParsedToolCall[]): ParsedToolCall[] {
+  const seen = new Set<string>()
+  const deduplicated: ParsedToolCall[] = []
+
+  for (const toolCall of toolCalls) {
+    // Create a unique key from name and stringified arguments
+    // Sort keys in arguments to handle different property orders
+    const sortedArgs = Object.keys(toolCall.arguments)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = toolCall.arguments[key]
+        return acc
+      }, {} as Record<string, unknown>)
+    
+    const key = `${toolCall.name}:${JSON.stringify(sortedArgs)}`
+    
+    if (!seen.has(key)) {
+      seen.add(key)
+      deduplicated.push(toolCall)
+    }
+  }
+
+  return deduplicated
+}
+
+/**
  * Check if content contains tool calls
  */
 export function hasToolCalls(content: string): boolean {

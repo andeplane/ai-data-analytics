@@ -5,6 +5,7 @@ import {
   createImagePart,
   createLoadingPart,
   createTextPart,
+  deduplicateToolCalls,
   generateId,
   getTextFromParts,
   hasToolCalls,
@@ -54,6 +55,119 @@ describe(parseToolCalls.name, () => {
     ['missing arguments field', '<tool_call>\n{"name": "test"}\n</tool_call>'],
   ])('should return empty array for %s', (_description, content) => {
     expect(parseToolCalls(content)).toEqual([])
+  })
+})
+
+describe(deduplicateToolCalls.name, () => {
+  it('should remove duplicate tool calls with identical name and arguments', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'What is the average?', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'What is the average?', dataframe_names: ['df1'] } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual(toolCalls[0])
+  })
+
+  it('should preserve non-duplicate tool calls', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'What is the average?', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'What is the max?', dataframe_names: ['df1'] } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(2)
+    expect(result).toEqual(toolCalls)
+  })
+
+  it('should handle duplicates with different argument order', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'What is the average?', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { dataframe_names: ['df1'], question: 'What is the average?' } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual(toolCalls[0])
+  })
+
+  it('should handle multiple duplicates', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'Q2', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'] } },
+      { name: 'analyze_data', arguments: { question: 'Q2', dataframe_names: ['df1'] } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual(toolCalls[0])
+    expect(result[1]).toEqual(toolCalls[2])
+  })
+
+  it('should handle empty array', () => {
+    expect(deduplicateToolCalls([])).toEqual([])
+  })
+
+  it('should handle single tool call', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'What is the average?', dataframe_names: ['df1'] } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toEqual(toolCalls)
+  })
+
+  it('should handle nested arguments', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'], options: { includeNulls: true } } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'], options: { includeNulls: true } } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1'], options: { includeNulls: false } } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual(toolCalls[0])
+    expect(result[1]).toEqual(toolCalls[2])
+  })
+
+  it('should handle array arguments', () => {
+    const toolCalls = [
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1', 'df2'] } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df1', 'df2'] } },
+      { name: 'analyze_data', arguments: { question: 'Q1', dataframe_names: ['df2', 'df1'] } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    // Different array order should be treated as different (since we sort object keys, not array values)
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual(toolCalls[0])
+    expect(result[1]).toEqual(toolCalls[2])
+  })
+
+  it('should preserve order of first occurrence', () => {
+    const toolCalls = [
+      { name: 'tool1', arguments: { a: 1 } },
+      { name: 'tool2', arguments: { b: 2 } },
+      { name: 'tool1', arguments: { a: 1 } },
+      { name: 'tool3', arguments: { c: 3 } },
+    ]
+
+    const result = deduplicateToolCalls(toolCalls)
+
+    expect(result).toHaveLength(3)
+    expect(result[0].name).toBe('tool1')
+    expect(result[1].name).toBe('tool2')
+    expect(result[2].name).toBe('tool3')
   })
 })
 
