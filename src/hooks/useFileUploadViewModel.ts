@@ -29,7 +29,7 @@ export interface FileUploadViewModel {
  * Sanitize filename to create a safe SQL identifier.
  * Removes extension and replaces non-alphanumeric characters with underscores.
  */
-function sanitizeFilename(filename: string): string {
+export function sanitizeFilename(filename: string): string {
   let name = filename.replace(/\.[^/.]+$/, '') // Remove extension
   // Replace any non-alphanumeric characters with underscores
   // This ensures safe SQL identifiers (e.g., "customers-10000" -> "customers_10000")
@@ -40,7 +40,7 @@ function sanitizeFilename(filename: string): string {
 /**
  * Determine file type from extension.
  */
-function getFileType(filename: string): 'csv' | 'json' {
+export function getFileType(filename: string): 'csv' | 'json' {
   const ext = filename.split('.').pop()?.toLowerCase()
   return ext === 'json' ? 'json' : 'csv'
 }

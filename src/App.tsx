@@ -5,6 +5,7 @@ import { useWebLLM } from './hooks/useWebLLM'
 import { useLLMChat, generateId, type SystemLoadingState } from './hooks/useLLMChat'
 import { useStarterQuestions } from './hooks/useStarterQuestions'
 import { useDataframes } from './hooks/useDataframes'
+import { useChatDragAndDrop } from './hooks/useChatDragAndDrop'
 import { Sidebar } from './components/Sidebar'
 import { ChartImagePartUI } from './components/ChartImagePartUI'
 import { ToolCallCollapsible } from './components/ToolCallCollapsible'
@@ -13,6 +14,7 @@ import { ExampleDataBubbles } from './components/ExampleDataBubbles'
 import { LoadingMessage } from './components/LoadingMessage'
 import { ThinkingMessage } from './components/ThinkingMessage'
 import { WelcomeModal } from './components/WelcomeModal'
+import { DragDropOverlay } from './components/DragDropOverlay'
 import { callLLM } from './lib/llmCaller'
 import type { DataFrameInfo } from './lib/systemPrompt'
 import { useAnalytics } from './lib/analytics'
@@ -85,6 +87,9 @@ function App() {
   const handleUserFileLoad = useCallback(async (name: string, content: string, type: 'csv' | 'json') => {
     await handleFileLoad(name, content, type, 'user_upload')
   }, [handleFileLoad])
+
+  // Drag-and-drop for chat window
+  const chatDragAndDrop = useChatDragAndDrop(handleUserFileLoad)
 
   // Convert dataframes to DataFrameInfo for the chat hook
   const dataframeInfos: DataFrameInfo[] = dataframes.map((df) => ({
@@ -196,6 +201,15 @@ function App() {
       {/* Welcome Modal - shown on first visit */}
       <WelcomeModal />
 
+      {/* Full-screen drag-and-drop overlay */}
+      <DragDropOverlay 
+        isDragging={chatDragAndDrop.isDragging}
+        onDrop={chatDragAndDrop.handleDrop}
+        onDragOver={chatDragAndDrop.handleDragOver}
+        onDragEnter={chatDragAndDrop.handleDragEnter}
+        onDragLeave={chatDragAndDrop.handleDragLeave}
+      />
+
       <div className="min-h-screen bg-zinc-950 text-zinc-100 flex">
         {/* Sidebar */}
         <Sidebar
@@ -218,7 +232,13 @@ function App() {
       />
 
       {/* Main Content - Chat Area using @llamaindex/chat-ui */}
-      <main className="flex-1 flex flex-col h-screen">
+      <main 
+        className="flex-1 flex flex-col h-screen"
+        onDrop={chatDragAndDrop.handleDrop}
+        onDragOver={chatDragAndDrop.handleDragOver}
+        onDragEnter={chatDragAndDrop.handleDragEnter}
+        onDragLeave={chatDragAndDrop.handleDragLeave}
+      >
         <ChatSection handler={chatHandler} className="flex-1 flex flex-col">
           {/* Chat Messages */}
           <ChatMessages className="flex-1 overflow-y-auto p-4">
