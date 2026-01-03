@@ -43,9 +43,6 @@ export function ThinkingMessage({ toolCallProgress, pandasProgress }: ThinkingMe
   const hasToolCalls = toolCallProgress.length > 0
   const executingToolCall = toolCallProgress.find(tc => tc.status === 'executing')
   
-  // Show pandas progress only when a tool is actively executing
-  const showPandasProgress = executingToolCall && pandasProgress
-  
   return (
     <div className="flex flex-col gap-3 max-w-lg">
       {/* Header with animated dots */}

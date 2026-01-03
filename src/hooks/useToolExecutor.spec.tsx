@@ -14,6 +14,7 @@ describe(useToolExecutor.name, () => {
     mockPyodide = {
       runPython: vi.fn(),
       runPythonAsync: vi.fn(),
+      writeFile: vi.fn(),
     }
 
     // Suppress console.error for error tests
