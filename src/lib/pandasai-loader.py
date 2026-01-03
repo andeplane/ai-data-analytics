@@ -33,6 +33,8 @@ async def patch_and_load_pandasai():
         "pyyaml==6.0.2",
         "sqlglot==26.14.0",
         "astor==0.8.1",
+        "scikit-learn",
+        "scipy",
     ])
     
     # Install pandasai without dependencies
