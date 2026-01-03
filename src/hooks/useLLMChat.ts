@@ -125,6 +125,10 @@ export function useLLMChat({
           // Update cumulative token count
           totalTokensRef.current += metrics.totalTokens
         },
+        onError: (error) => {
+          // Track LLM errors
+          analytics.trackLLMError(error)
+        },
       }
     },
     [dataframes, analytics]
@@ -397,7 +401,21 @@ export function useLLMChat({
               inputArguments: toolCall.arguments,
               durationMs: toolCallDuration,
               success: result.success,
+              // Add error details when failed
+              errorMessage: result.success ? undefined : result.result,
+              generatedCode: result.executedCode,
             })
+            
+            // Also track as a dedicated error event for easier Mixpanel filtering
+            if (!result.success) {
+              analytics.trackToolError({
+                toolName: toolCall.name,
+                errorMessage: result.result,
+                generatedCode: result.executedCode,
+                question: typeof toolCall.arguments.question === 'string' 
+                  ? toolCall.arguments.question : undefined,
+              })
+            }
             
             toolResults.push({ name: toolCall.name, result, input })
             

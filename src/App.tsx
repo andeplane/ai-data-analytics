@@ -45,8 +45,12 @@ function App() {
       temperature: 0.0,
       max_tokens: 2000,
       source: 'pandasai',
+      onError: (error) => {
+        // Track LLM errors from PandasAI
+        analytics.trackLLMError(error)
+      },
     })
-  }, [])
+  }, [analytics])
   
   // Track PandasAI execution progress for UI feedback
   const [pandasProgress, setPandasProgress] = useState<{ stage: PandasAIProgressStage; detail?: string } | null>(null)

@@ -1,6 +1,6 @@
 import type { MLCEngineInterface } from '@mlc-ai/web-llm'
 import type { ChatCompletionMessageParam, ResponseFormat } from '@mlc-ai/web-llm'
-import type { LLMCallMetrics } from './analytics'
+import type { LLMCallMetrics, LLMErrorMetrics } from './analytics'
 
 export interface LLMCallOptions {
   messages: ChatCompletionMessageParam[]
@@ -9,6 +9,7 @@ export interface LLMCallOptions {
   response_format?: ResponseFormat
   source?: string // Where the call is coming from (e.g., "chat-ui", "pandasai")
   onMetrics?: (metrics: LLMCallMetrics) => void // Optional analytics callback
+  onError?: (error: LLMErrorMetrics) => void // Optional error tracking callback
 }
 
 /**
@@ -96,11 +97,22 @@ export async function callLLM(
     return content
   } catch (error) {
     const duration = Date.now() - startTime
-    console.error(`❌ LLM Error [${source.toUpperCase()}]:`, error instanceof Error ? error.message : String(error))
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`❌ LLM Error [${source.toUpperCase()}]:`, errorMessage)
     console.groupCollapsed(`📋 Full Error Details [${source.toUpperCase()}]`)
     console.error('Error:', error)
     console.error(`Duration before error: ${duration}ms`)
     console.groupEnd()
+    
+    // Track error if callback provided
+    if (options.onError) {
+      options.onError({
+        source,
+        errorMessage,
+        durationMs: duration,
+      })
+    }
+    
     throw error
   }
 }
@@ -213,11 +225,22 @@ export async function* callLLMStreaming(
     return content
   } catch (error) {
     const duration = Date.now() - startTime
-    console.error(`❌ LLM Streaming Error [${source.toUpperCase()}]:`, error instanceof Error ? error.message : String(error))
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    console.error(`❌ LLM Streaming Error [${source.toUpperCase()}]:`, errorMessage)
     console.groupCollapsed(`📋 Full Error Details [${source.toUpperCase()}]`)
     console.error('Error:', error)
     console.error(`Duration before error: ${duration}ms`)
     console.groupEnd()
+    
+    // Track error if callback provided
+    if (options.onError) {
+      options.onError({
+        source,
+        errorMessage,
+        durationMs: duration,
+      })
+    }
+    
     throw error
   }
 }

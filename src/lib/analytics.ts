@@ -73,6 +73,9 @@ export interface ToolCallMetrics {
   inputArguments: Record<string, unknown>
   durationMs: number
   success: boolean
+  // Error tracking fields
+  errorMessage?: string      // Error message when success=false
+  generatedCode?: string     // PandasAI generated Python code (useful for debugging)
 }
 
 export interface ChatMessageMetrics {
@@ -94,9 +97,24 @@ export interface ExampleClickMetrics {
   value: string
 }
 
+export interface ToolErrorMetrics {
+  toolName: string
+  errorMessage: string
+  generatedCode?: string    // The Python code that caused the error
+  question?: string         // The user's question that led to this error
+}
+
+export interface LLMErrorMetrics {
+  source: string           // 'chat' | 'pandasai'
+  errorMessage: string
+  durationMs: number
+}
+
 export interface AnalyticsService {
   trackLLMCall(data: LLMCallMetrics): void
   trackToolCall(data: ToolCallMetrics): void
+  trackToolError(data: ToolErrorMetrics): void
+  trackLLMError(data: LLMErrorMetrics): void
   trackChatMessage(data: ChatMessageMetrics): void
   trackFileUpload(data: FileUploadMetrics): void
   trackExampleClick(data: ExampleClickMetrics): void
@@ -110,6 +128,8 @@ export interface AnalyticsService {
 const noOpAnalyticsService: AnalyticsService = {
   trackLLMCall: () => {},
   trackToolCall: () => {},
+  trackToolError: () => {},
+  trackLLMError: () => {},
   trackChatMessage: () => {},
   trackFileUpload: () => {},
   trackExampleClick: () => {},
@@ -138,6 +158,25 @@ const mixpanelAnalyticsService: AnalyticsService = {
       input_arguments: data.inputArguments,
       duration_ms: data.durationMs,
       success: data.success,
+      error_message: data.errorMessage,
+      generated_code: data.generatedCode,
+    })
+  },
+
+  trackToolError: (data: ToolErrorMetrics) => {
+    mixpanel.track('tool_error', {
+      tool_name: data.toolName,
+      error_message: data.errorMessage,
+      generated_code: data.generatedCode,
+      question: data.question,
+    })
+  },
+
+  trackLLMError: (data: LLMErrorMetrics) => {
+    mixpanel.track('llm_error', {
+      source: data.source,
+      error_message: data.errorMessage,
+      duration_ms: data.durationMs,
     })
   },
 
