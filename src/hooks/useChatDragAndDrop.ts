@@ -63,11 +63,11 @@ export function useChatDragAndDrop(
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    dragCounterRef.current++
-    // Ensure counter never goes negative (safeguard)
+    // Reset counter to 0 if it's negative (safeguard before incrementing)
     if (dragCounterRef.current < 0) {
       dragCounterRef.current = 0
     }
+    dragCounterRef.current++
     if (dragCounterRef.current === 1) {
       setIsDragging(true)
     }
